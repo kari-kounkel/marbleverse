@@ -1,8 +1,8 @@
 {
   "name": "Marbleverse",
   "short_name": "Marbles",
-  "description": "A gentle space for honoring small wins.",
-  "start_url": ".",
+  "description": "A pocket-sized place to gather tiny victories, quiet efforts, and good-enough days. Drop a marble. Keep going.",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#E3F3F1",
   "theme_color": "#E3F3F1",
