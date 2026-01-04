@@ -1,0 +1,27 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#E3F3F1"/>
+  
+  <!-- Jar Body -->
+  <path d="M136 160 C136 140, 156 120, 176 120 L336 120 C356 120, 376 140, 376 160 L376 380 C376 420, 340 460, 300 460 L212 460 C172 460, 136 420, 136 380 Z" fill="white" fill-opacity="0.6" stroke="#1e293b" stroke-width="8"/>
+  
+  <!-- Jar Neck -->
+  <rect x="176" y="88" width="160" height="32" rx="8" fill="white" fill-opacity="0.8" stroke="#1e293b" stroke-width="6"/>
+  <rect x="168" y="112" width="176" height="16" rx="4" fill="white" fill-opacity="0.6" stroke="#1e293b" stroke-width="4"/>
+  
+  <!-- Marbles -->
+  <circle cx="200" cy="400" r="32" fill="#4ECDC4">
+    <animate attributeName="opacity" values="0.9;1;0.9" dur="3s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="312" cy="400" r="28" fill="#FF8C42"/>
+  <circle cx="256" cy="380" r="36" fill="#4361EE"/>
+  <circle cx="180" cy="340" r="26" fill="#F72585"/>
+  <circle cx="280" cy="330" r="30" fill="#FFD700"/>
+  <circle cx="340" cy="350" r="24" fill="#70E000"/>
+  <circle cx="220" cy="290" r="34" fill="#9B5DE5"/>
+  <circle cx="300" cy="280" r="28" fill="#00BBF9"/>
+  <circle cx="256" cy="240" r="32" fill="#4ECDC4"/>
+  
+  <!-- Glass reflection -->
+  <path d="M160 180 Q160 200, 165 300 Q168 350, 170 380" stroke="white" stroke-width="12" stroke-linecap="round" fill="none" opacity="0.4"/>
+</svg>

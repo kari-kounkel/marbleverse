@@ -1,19 +1,121 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Settings as SettingsIcon, Plus, History, Loader2, Sparkles, Layers, ChevronDown, Cloud, CloudDownload, CloudUpload, LogOut, RotateCcw, Volume2, VolumeX, Music } from 'lucide-react';
-import { AppState, Marble, MARBLE_COLORS, MILESTONES, TonePreference, JarTheme, THEMES, CATEGORIES, MarbleSize } from './types';
-import MarbleJar from './MarbleJar';
-import EncouragementModal from './EncouragementModal';
-import { generateEncouragement } from './geminiService';
-import { supabase, loginWithMagicLink, saveToCloud, restoreFromCloud } from './syncService';
 
+// ============ TYPES ============
+type TonePreference = 'Zen' | 'Poetic' | 'Grounded';
+type JarTheme = 'Classic' | 'Midnight' | 'Ceramic';
+type MarbleSize = 'sm' | 'md' | 'lg' | 'xl';
+
+interface Marble {
+  id: string;
+  timestamp: number;
+  note?: string;
+  color: string;
+  position: { x: number; y: number };
+  isHonoring?: boolean;
+  category?: string;
+  label?: string;
+  size?: MarbleSize;
+  isMilestone?: boolean;
+}
+
+interface AppState {
+  marbles: Marble[];
+  tone: TonePreference;
+  theme: JarTheme;
+  lastCheckIn: number | null;
+  milestonesReached: number[];
+  soundEnabled: boolean;
+}
+
+// ============ CONSTANTS ============
 const STORAGE_KEY = 'marbleverse_state_v3';
-const UNDO_KEY = 'marbleverse_undo_backup_v1';
+const MILESTONES = [7, 13, 30, 60, 90, 100, 365];
 
-// Audio Logic
+const MARBLE_COLORS = [
+  '#4ECDC4', '#FF8C42', '#FFD700', '#4361EE',
+  '#F72585', '#70E000', '#9B5DE5', '#00BBF9',
+];
+
+const CATEGORIES = [
+  { id: 'sober', name: 'Sobriety', label: 'SOBER', color: '#4361EE' },
+  { id: 'water', name: 'Hydration', label: 'WATER', color: '#4ECDC4' },
+  { id: 'move', name: 'Movement', label: 'MOVE', color: '#70E000' },
+  { id: 'rest', name: 'Rest', label: 'REST', color: '#9B5DE5' },
+  { id: 'general', name: 'General', label: '', color: '#FFD700' },
+];
+
+const THEMES: Record<JarTheme, { bg: string; jarBorder: string; jarBg: string; text: string; accent: string }> = {
+  Classic: {
+    bg: '#E3F3F1',
+    jarBorder: 'rgba(255,255,255,0.8)',
+    jarBg: 'rgba(255,255,255,0.1)',
+    text: '#1e293b',
+    accent: '#1e293b'
+  },
+  Midnight: {
+    bg: '#0a0a0c',
+    jarBorder: 'rgba(129,140,248,0.3)',
+    jarBg: 'rgba(49,46,129,0.1)',
+    text: '#e0e7ff',
+    accent: '#818cf8'
+  },
+  Ceramic: {
+    bg: '#f5ebe0',
+    jarBorder: 'rgba(120,113,108,0.4)',
+    jarBg: 'rgba(214,211,209,0.2)',
+    text: '#292524',
+    accent: '#78716c'
+  }
+};
+
+// ============ ENCOURAGEMENT MESSAGES ============
+const ENCOURAGEMENTS: Record<TonePreference, Record<number, string[]>> = {
+  Zen: {
+    7: ["Seven. A week of showing up.", "One week. You're here.", "Seven moments. All yours."],
+    13: ["Thirteen. Lucky you showed up.", "13 gathered. Keep going.", "A baker's dozen of grace."],
+    30: ["A whole month of noticing.", "30. That's not nothing.", "Month one. You made it."],
+    60: ["Two months of small wins.", "60. Look at that.", "Sixty moments of care."],
+    90: ["90 days. A season of you.", "Quarter year. Still here.", "90. That matters."],
+    100: ["Triple digits. Wow.", "100. You built this.", "A hundred tiny yeses."],
+    365: ["A year. A whole year.", "365. You stayed.", "One year of showing up for yourself."]
+  },
+  Poetic: {
+    7: ["Seven stars in your pocket now.", "A week woven, thread by thread.", "Seven seeds, already growing."],
+    13: ["Thirteen whispers of 'I can.'", "A constellation forming.", "Lucky thirteen, indeed."],
+    30: ["A moon cycle of kindness to yourself.", "Thirty sunrises you claimed.", "One month, painted in small victories."],
+    60: ["Sixty pearls on a string of days.", "Two moons of gathering light.", "The jar fills like a poem."],
+    90: ["A season inscribed in glass.", "Ninety chapters of your story.", "Spring, summer, or fall — you bloomed."],
+    100: ["A century of small revolutions.", "One hundred acts of quiet courage.", "The hundredth marble catches all the light."],
+    365: ["A year held in your hands.", "365 days of choosing yourself.", "The jar overflows with a year of you."]
+  },
+  Grounded: {
+    7: ["Week one done. Not bad.", "Seven. You actually did it.", "That's a week. Real progress."],
+    13: ["13 in the jar. Solid.", "You're building something here.", "Thirteen wins. Keep stacking."],
+    30: ["A month. That's discipline.", "30 days of showing up. Respect.", "Month one complete. Nice work."],
+    60: ["Two months strong.", "60. You're not messing around.", "Halfway to 90. Keep going."],
+    90: ["90 days. That's a habit now.", "Three months of work. It shows.", "90. You earned every one."],
+    100: ["100. That's a real number.", "Triple digits. You built this.", "A hundred wins. Own that."],
+    365: ["365. A whole damn year.", "You did this for a year. Incredible.", "One year. You showed up 365 times."]
+  }
+};
+
+const getEncouragement = (count: number, tone: TonePreference): string => {
+  const milestone = MILESTONES.find(m => m === count) || MILESTONES[MILESTONES.length - 1];
+  const messages = ENCOURAGEMENTS[tone][milestone] || ENCOURAGEMENTS[tone][7];
+  return messages[Math.floor(Math.random() * messages.length)];
+};
+
+// ============ SIZE MAP ============
+const SIZE_MAP: Record<MarbleSize, number> = {
+  sm: 22,
+  md: 30,
+  lg: 44,
+  xl: 58
+};
+
+// ============ AUDIO HOOK ============
 const useAudio = () => {
   const audioCtx = useRef<AudioContext | null>(null);
-  const ambientOsc = useRef<OscillatorNode | null>(null);
-  const ambientGain = useRef<GainNode | null>(null);
 
   const initCtx = () => {
     if (!audioCtx.current) {
@@ -27,11 +129,9 @@ const useAudio = () => {
     const ctx = audioCtx.current;
     const now = ctx.currentTime;
 
-    // Slight randomization for organic feel
     const pitchShift = (Math.random() - 0.5) * 200;
-    const durationOffset = Math.random() * 0.05;
 
-    // 1. The "Plink" (Glassy high-freq impact)
+    // Plink
     const osc1 = ctx.createOscillator();
     const gain1 = ctx.createGain();
     osc1.type = 'sine';
@@ -42,102 +142,428 @@ const useAudio = () => {
     osc1.connect(gain1);
     gain1.connect(ctx.destination);
 
-    // 2. The "Body" (Ceramic resonance)
+    // Body
     const osc2 = ctx.createOscillator();
     const gain2 = ctx.createGain();
     osc2.type = 'sine';
     osc2.frequency.setValueAtTime(520 + pitchShift, now);
     osc2.frequency.exponentialRampToValueAtTime(440 + pitchShift, now + 0.2);
     gain2.gain.setValueAtTime(0.04, now);
-    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.25 + durationOffset);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
     osc2.connect(gain2);
     gain2.connect(ctx.destination);
 
-    // 3. Tiny noise burst for "Thud/Impact"
-    const bufferSize = ctx.sampleRate * 0.02;
-    const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const output = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      output[i] = Math.random() * 2 - 1;
-    }
-    const noiseSource = ctx.createBufferSource();
-    noiseSource.buffer = noiseBuffer;
-    const noiseGain = ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.02, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.02);
-    noiseSource.connect(noiseGain);
-    noiseGain.connect(ctx.destination);
-
     osc1.start(now);
     osc2.start(now);
-    noiseSource.start(now);
-    
     osc1.stop(now + 0.2);
     osc2.stop(now + 0.3);
   };
 
-  const startAmbient = () => {
-    initCtx();
-    if (!audioCtx.current) return;
-    const ctx = audioCtx.current;
-    if (ambientOsc.current) return;
-
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(116.54, ctx.currentTime); // Bb2 - warm hum
-    
-    gain.gain.setValueAtTime(0, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.02, ctx.currentTime + 2); // Very soft
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    ambientOsc.current = osc;
-    ambientGain.current = gain;
-  };
-
-  const stopAmbient = () => {
-    if (ambientGain.current && audioCtx.current) {
-      const ctx = audioCtx.current;
-      ambientGain.current.gain.linearRampToValueAtTime(0, ctx.currentTime + 1);
-      setTimeout(() => {
-        ambientOsc.current?.stop();
-        ambientOsc.current = null;
-        ambientGain.current = null;
-      }, 1100);
-    }
-  };
-
-  return { playDrop, startAmbient, stopAmbient };
+  return { playDrop };
 };
 
+// ============ ICONS ============
+const PlusIcon = () => (
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"></line>
+    <line x1="5" y1="12" x2="19" y2="12"></line>
+  </svg>
+);
+
+const SettingsIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"></circle>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+  </svg>
+);
+
+const HistoryIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"></circle>
+    <polyline points="12 6 12 12 16 14"></polyline>
+  </svg>
+);
+
+const VolumeIcon = ({ muted }: { muted: boolean }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    {muted ? (
+      <>
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <line x1="23" y1="9" x2="17" y2="15"></line>
+        <line x1="17" y1="9" x2="23" y2="15"></line>
+      </>
+    ) : (
+      <>
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+      </>
+    )}
+  </svg>
+);
+
+const CloseIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"></line>
+    <line x1="6" y1="6" x2="18" y2="18"></line>
+  </svg>
+);
+
+// ============ MARBLE JAR COMPONENT ============
+const MarbleJar: React.FC<{ marbles: Marble[]; theme: JarTheme }> = ({ marbles, theme }) => {
+  const currentTheme = THEMES[theme];
+  
+  return (
+    <div style={{
+      position: 'relative',
+      width: '100%',
+      maxWidth: '320px',
+      aspectRatio: '3 / 4.5',
+      margin: '2rem auto 0'
+    }}>
+      {/* Jar Silhouette */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        border: `3.5px solid ${currentTheme.jarBorder}`,
+        borderRadius: '45px 45px 85px 85px',
+        backgroundColor: currentTheme.jarBg,
+        backdropFilter: 'blur(2px)',
+        overflow: 'hidden',
+        zIndex: 10,
+        pointerEvents: 'none',
+        transition: 'all 0.7s ease'
+      }}>
+        {/* Glass Reflections */}
+        {theme !== 'Ceramic' && (
+          <>
+            <div style={{
+              position: 'absolute',
+              top: '40px',
+              left: '32px',
+              width: '24px',
+              height: '75%',
+              borderRadius: '9999px',
+              filter: 'blur(3px)',
+              opacity: 0.4,
+              backgroundColor: theme === 'Midnight' ? 'rgba(129,140,248,0.2)' : 'rgba(255,255,255,0.5)'
+            }} />
+            <div style={{
+              position: 'absolute',
+              bottom: '64px',
+              right: '40px',
+              width: '16px',
+              height: '20%',
+              borderRadius: '9999px',
+              filter: 'blur(2px)',
+              opacity: 0.2,
+              backgroundColor: theme === 'Midnight' ? 'rgba(129,140,248,0.1)' : 'rgba(255,255,255,0.3)'
+            }} />
+          </>
+        )}
+      </div>
+
+      {/* Jar Neck */}
+      <div style={{
+        position: 'absolute',
+        top: '-24px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: '65%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        zIndex: 20
+      }}>
+        <div style={{
+          width: '100%',
+          height: '16px',
+          border: `2px solid ${currentTheme.jarBorder}`,
+          borderRadius: '8px 8px 0 0',
+          backgroundColor: theme === 'Midnight' ? 'rgba(49,46,129,0.8)' : 'rgba(255,255,255,0.8)',
+          transition: 'all 0.7s ease'
+        }} />
+        <div style={{
+          width: '110%',
+          height: '12px',
+          borderLeft: `2px solid ${currentTheme.jarBorder}`,
+          borderRight: `2px solid ${currentTheme.jarBorder}`,
+          borderBottom: `2px solid ${currentTheme.jarBorder}`,
+          borderRadius: '0 0 6px 6px',
+          backgroundColor: theme === 'Midnight' ? 'rgba(49,46,129,0.6)' : 'rgba(255,255,255,0.6)',
+          transition: 'all 0.7s ease'
+        }} />
+      </div>
+
+      {/* Marbles Container */}
+      <div style={{
+        position: 'absolute',
+        left: '16px',
+        right: '16px',
+        top: '16px',
+        bottom: '32px',
+        overflow: 'hidden',
+        borderRadius: '35px 35px 75px 75px'
+      }}>
+        {marbles.map((marble, index) => {
+          const marbleSize = marble.size || 'lg';
+          const sizePx = SIZE_MAP[marbleSize];
+          const isXL = marbleSize === 'xl';
+          const isNewest = index === marbles.length - 1;
+
+          return (
+            <div
+              key={marble.id}
+              style={{
+                position: 'absolute',
+                width: `${sizePx}px`,
+                height: `${sizePx}px`,
+                borderRadius: '50%',
+                left: `${marble.position.x}%`,
+                bottom: `${marble.position.y}%`,
+                background: `radial-gradient(circle at 35% 35%, ${marble.color} 0%, rgba(0,0,0,0.4) 120%)`,
+                boxShadow: isXL 
+                  ? `0 0 20px ${marble.color}A0, inset -4px -4px 8px rgba(0,0,0,0.6), inset 4px 4px 8px rgba(255,255,255,0.5), 0 6px 14px rgba(0,0,0,0.4)`
+                  : `inset -2px -2px 5px rgba(0,0,0,0.5), inset 2px 2px 5px rgba(255,255,255,0.4), 0 3px 8px rgba(0,0,0,0.3)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                zIndex: isXL ? 20 : 0,
+                opacity: marble.isHonoring ? 0.7 : 1,
+                filter: marble.isHonoring ? 'saturate(0.5)' : 'none',
+                animation: isNewest ? 'marbleEnter 0.5s ease-out' : undefined,
+                transition: 'opacity 0.5s ease'
+              }}
+            >
+              {/* Label */}
+              {marble.label && (
+                <span style={{
+                  fontSize: '8px',
+                  fontWeight: 900,
+                  color: 'white',
+                  letterSpacing: '-0.5px',
+                  textTransform: 'uppercase',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                  textAlign: 'center',
+                  padding: '0 4px',
+                  userSelect: 'none',
+                  pointerEvents: 'none'
+                }}>
+                  {marble.label}
+                </span>
+              )}
+
+              {/* Specular Highlight */}
+              <div style={{
+                position: 'absolute',
+                top: '12%',
+                left: '12%',
+                width: '35%',
+                height: '35%',
+                backgroundColor: 'rgba(255,255,255,0.4)',
+                borderRadius: '50%',
+                filter: 'blur(0.8px)'
+              }} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ============ MODAL COMPONENT ============
+const Modal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  theme: JarTheme;
+  children: React.ReactNode;
+  title?: string;
+  fullScreen?: boolean;
+}> = ({ isOpen, onClose, theme, children, title, fullScreen }) => {
+  const currentTheme = THEMES[theme];
+  
+  if (!isOpen) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 50,
+      display: 'flex',
+      alignItems: fullScreen ? 'stretch' : 'center',
+      justifyContent: 'center',
+      padding: fullScreen ? 0 : '24px',
+      backgroundColor: fullScreen ? currentTheme.bg : 'rgba(15,23,42,0.4)',
+      backdropFilter: fullScreen ? undefined : 'blur(4px)',
+      overflowY: 'auto',
+      transition: 'background-color 0.5s ease'
+    }}>
+      <div style={{
+        backgroundColor: currentTheme.bg,
+        borderRadius: fullScreen ? 0 : '48px',
+        padding: fullScreen ? '24px' : '32px',
+        width: '100%',
+        maxWidth: fullScreen ? '448px' : '384px',
+        margin: fullScreen ? '0 auto' : 'auto',
+        height: fullScreen ? '100%' : 'auto',
+        display: 'flex',
+        flexDirection: 'column',
+        boxShadow: fullScreen ? undefined : '0 25px 50px -12px rgba(0,0,0,0.25)',
+        border: fullScreen ? undefined : '1px solid rgba(255,255,255,0.2)',
+        transition: 'background-color 0.5s ease'
+      }}>
+        {title && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: fullScreen ? '48px' : '24px'
+          }}>
+            <h2 style={{
+              fontSize: fullScreen ? '30px' : '20px',
+              fontWeight: 700,
+              color: currentTheme.text,
+              fontFamily: 'Georgia, serif'
+            }}>{title}</h2>
+            <button
+              onClick={onClose}
+              style={{
+                padding: '12px',
+                borderRadius: '50%',
+                backgroundColor: theme === 'Midnight' ? 'rgba(49,46,129,1)' : 'rgba(226,232,240,1)',
+                color: theme === 'Midnight' ? 'rgba(165,180,252,1)' : 'rgba(71,85,105,1)',
+                border: 'none',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <CloseIcon />
+            </button>
+          </div>
+        )}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ============ ENCOURAGEMENT MODAL ============
+const EncouragementModal: React.FC<{
+  message: string;
+  count: number;
+  onClose: () => void;
+  theme: JarTheme;
+}> = ({ message, count, onClose, theme }) => {
+  const currentTheme = THEMES[theme];
+  
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      zIndex: 50,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px',
+      backgroundColor: 'rgba(15,23,42,0.3)',
+      backdropFilter: 'blur(4px)'
+    }}>
+      <div style={{
+        backgroundColor: currentTheme.bg,
+        borderRadius: '40px',
+        padding: '32px',
+        maxWidth: '384px',
+        width: '100%',
+        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+        border: `1px solid ${theme === 'Midnight' ? 'rgba(129,140,248,0.2)' : 'rgba(255,255,255,0.5)'}`,
+        textAlign: 'center',
+        animation: 'modalEnter 0.3s ease-out'
+      }}>
+        <div style={{
+          display: 'inline-block',
+          padding: '6px 16px',
+          borderRadius: '9999px',
+          fontSize: '10px',
+          fontWeight: 700,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          marginBottom: '24px',
+          backgroundColor: theme === 'Midnight' ? 'rgba(49,46,129,0.5)' : 'rgba(254,249,195,1)',
+          color: theme === 'Midnight' ? 'rgba(199,210,254,1)' : 'rgba(161,98,7,1)',
+          border: `1px solid ${theme === 'Midnight' ? 'rgba(99,102,241,0.3)' : 'rgba(254,240,138,1)'}`
+        }}>
+          {count} gathered
+        </div>
+        <h2 style={{
+          fontSize: '24px',
+          fontWeight: 700,
+          marginBottom: '24px',
+          fontFamily: 'Georgia, serif',
+          lineHeight: 1.4,
+          color: currentTheme.text
+        }}>{message}</h2>
+        <button
+          onClick={onClose}
+          style={{
+            width: '100%',
+            marginTop: '16px',
+            padding: '16px 24px',
+            color: 'white',
+            borderRadius: '16px',
+            fontWeight: 700,
+            fontSize: '12px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            border: 'none',
+            cursor: 'pointer',
+            backgroundColor: theme === 'Midnight' ? 'rgba(79,70,229,1)' : 'rgba(30,41,59,1)',
+            boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
+            transition: 'transform 0.1s ease'
+          }}
+          onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.95)')}
+          onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+        >
+          I'll take that.
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ============ MAIN APP ============
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Failed to load state:', e);
+    }
     return {
       marbles: [],
-      tone: 'Zen',
-      theme: 'Classic',
+      tone: 'Zen' as TonePreference,
+      theme: 'Classic' as JarTheme,
       lastCheckIn: null,
       milestonesReached: [],
-      soundEnabled: true,
-      ambientEnabled: false
+      soundEnabled: true
     };
   });
 
-  const { playDrop, startAmbient, stopAmbient } = useAudio();
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [emailInput, setEmailInput] = useState('');
-  
-  const [undoSecondsRemaining, setUndoSecondsRemaining] = useState(0);
-  const undoTimerRef = useRef<number | null>(null);
+  const { playDrop } = useAudio();
 
+  // Modal states
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [currentMilestoneMessage, setCurrentMilestoneMessage] = useState<string | null>(null);
+
+  // Form states
   const [reflection, setReflection] = useState('');
   const [isHonoringPast, setIsHonoringPast] = useState(false);
   const [honoringCount, setHonoringCount] = useState(1);
@@ -145,101 +571,19 @@ const App: React.FC = () => {
   const [selectedColor, setSelectedColor] = useState(CATEGORIES[0].color);
   const [customLabel, setCustomLabel] = useState(CATEGORIES[0].label);
   const [selectedSize, setSelectedSize] = useState<MarbleSize>('lg');
-  const [currentMilestoneMessage, setCurrentMilestoneMessage] = useState<string | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
+  // Save state to localStorage
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    if (state.ambientEnabled) startAmbient();
-    else stopAmbient();
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.error('Failed to save state:', e);
+    }
   }, [state]);
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUserEmail(session?.user?.email ?? null);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email ?? null);
-    });
-    return () => {
-      subscription.unsubscribe();
-      if (undoTimerRef.current) window.clearInterval(undoTimerRef.current);
-      stopAmbient();
-    };
-  }, []);
-
-  const handleMagicLink = async () => {
-    if (!emailInput) return;
-    setSyncLoading(true);
-    try {
-      const { error } = await loginWithMagicLink(emailInput);
-      setSyncLoading(false);
-      if (error) throw error;
-      alert("Check your email for a login link!");
-    } catch (err: any) {
-      setSyncLoading(false);
-      alert("Login error: " + err.message);
-    }
-  };
-
-  const handleCloudSave = async () => {
-    setSyncLoading(true);
-    try {
-      const { error } = await saveToCloud(state);
-      setSyncLoading(false);
-      if (error) throw error;
-      alert("Jar saved to your cloud vault.");
-    } catch (err: any) {
-      setSyncLoading(false);
-      alert("Save error: " + err.message);
-    }
-  };
-
-  const handleCloudRestore = async () => {
-    if (!window.confirm("Restore from cloud? This will replace all marbles currently on this phone.")) return;
-    setSyncLoading(true);
-    try {
-      const { data, error } = await restoreFromCloud();
-      setSyncLoading(false);
-      if (error) throw error;
-      if (!data || !data.marbles || data.marbles.length === 0) {
-        if (!window.confirm("Your cloud vault appears to be empty. Overwrite your current jar with an empty one?")) return;
-      }
-      localStorage.setItem(UNDO_KEY, JSON.stringify(state));
-      setState(data || { marbles: [], tone: 'Zen', theme: 'Classic', lastCheckIn: null, milestonesReached: [], soundEnabled: true, ambientEnabled: false });
-      setShowSettings(false);
-      setUndoSecondsRemaining(30);
-      if (undoTimerRef.current) window.clearInterval(undoTimerRef.current);
-      undoTimerRef.current = window.setInterval(() => {
-        setUndoSecondsRemaining(prev => {
-          if (prev <= 1) {
-            if (undoTimerRef.current) window.clearInterval(undoTimerRef.current);
-            localStorage.removeItem(UNDO_KEY);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } catch (err: any) {
-      setSyncLoading(false);
-      alert("Could not restore: " + err.message);
-    }
-  };
-
-  const handleUndoRestore = () => {
-    const backup = localStorage.getItem(UNDO_KEY);
-    if (backup) {
-      setState(JSON.parse(backup));
-      setUndoSecondsRemaining(0);
-      if (undoTimerRef.current) window.clearInterval(undoTimerRef.current);
-      localStorage.removeItem(UNDO_KEY);
-    }
-  };
-
-  const addMarble = async () => {
+  const addMarble = () => {
     if (isProcessing) return;
     setIsProcessing(true);
     
@@ -274,271 +618,743 @@ const App: React.FC = () => {
     }
 
     const updatedMarbles = [...state.marbles, ...newMarbles];
-    setState(prev => ({ ...prev, marbles: updatedMarbles, lastCheckIn: Date.now() }));
+    
+    setState(prev => ({ 
+      ...prev, 
+      marbles: updatedMarbles, 
+      lastCheckIn: Date.now(),
+      milestonesReached: isMilestoneDrop ? [...prev.milestonesReached, milestone!] : prev.milestonesReached
+    }));
+    
+    // Reset form
     setIsCheckInOpen(false);
     setReflection('');
     setIsHonoringPast(false);
     setHonoringCount(1);
-    setIsProcessing(false);
     setShowAdvanced(false);
     setSelectedSize('lg');
+    setIsProcessing(false);
     
+    // Show milestone message
     if (isMilestoneDrop) {
-      try {
-        const message = await generateEncouragement(newTotal, state.tone);
-        setCurrentMilestoneMessage(message);
-        setState(prev => ({ ...prev, milestonesReached: [...prev.milestonesReached, milestone] }));
-      } catch (err) { console.error(err); }
+      const message = getEncouragement(newTotal, state.tone);
+      setCurrentMilestoneMessage(message);
     }
+  };
+
+  const resetCheckInForm = () => {
+    setIsCheckInOpen(false);
+    setReflection('');
+    setShowAdvanced(false);
+    setCustomLabel(selectedCategory.label);
+    setIsHonoringPast(false);
+    setHonoringCount(1);
   };
 
   const currentTheme = THEMES[state.theme];
 
+  const buttonStyle = {
+    backgroundColor: state.theme === 'Midnight' ? 'rgba(79,70,229,1)' : 'rgba(30,41,59,1)',
+    color: 'white'
+  };
+
+  const secondaryButtonStyle = {
+    backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.4)' : 'white',
+    color: currentTheme.text,
+    border: `1px solid ${state.theme === 'Midnight' ? 'rgba(99,102,241,0.2)' : 'rgba(203,213,225,1)'}`
+  };
+
   return (
-    <div className="min-h-screen flex flex-col max-w-md mx-auto shadow-xl overflow-hidden relative transition-colors duration-700" style={{ backgroundColor: currentTheme.bg }}>
-      <header className={`p-6 flex justify-between items-center bg-white/5 backdrop-blur-sm sticky top-0 z-30 ${currentTheme.text}`}>
-        <div className="flex flex-col">
-          <h1 className="text-2xl font-extrabold tracking-tight opacity-100 uppercase">Marbleverse</h1>
-        </div>
-        <div className="flex gap-1">
-          <button onClick={() => setShowHistory(true)} className="opacity-90 hover:opacity-100 transition-opacity p-2"><History size={18} /></button>
-          <button onClick={() => setShowSettings(true)} className="opacity-90 hover:opacity-100 transition-opacity p-2"><SettingsIcon size={18} /></button>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      flexDirection: 'column',
+      maxWidth: '448px',
+      margin: '0 auto',
+      boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+      overflow: 'hidden',
+      position: 'relative',
+      backgroundColor: currentTheme.bg,
+      transition: 'background-color 0.7s ease',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+    }}>
+      {/* Keyframes */}
+      <style>{`
+        @keyframes marbleEnter {
+          from {
+            transform: translateY(-100px) scale(0.5);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0) scale(1);
+            opacity: 1;
+          }
+        }
+        @keyframes modalEnter {
+          from {
+            transform: scale(0.9);
+            opacity: 0;
+          }
+          to {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+      `}</style>
+
+      {/* Header */}
+      <header style={{
+        padding: '24px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        backdropFilter: 'blur(4px)',
+        position: 'sticky',
+        top: 0,
+        zIndex: 30
+      }}>
+        <h1 style={{
+          fontSize: '24px',
+          fontWeight: 800,
+          letterSpacing: '-0.5px',
+          textTransform: 'uppercase',
+          color: currentTheme.text
+        }}>Marbleverse</h1>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          <button
+            onClick={() => setShowHistory(true)}
+            style={{
+              padding: '8px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: currentTheme.text,
+              opacity: 0.9
+            }}
+          >
+            <HistoryIcon />
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            style={{
+              padding: '8px',
+              backgroundColor: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: currentTheme.text,
+              opacity: 0.9
+            }}
+          >
+            <SettingsIcon />
+          </button>
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col items-center justify-center p-6 pb-32 relative">
-        <div className={`text-center mb-4 ${currentTheme.text}`}>
-          <p className="text-7xl font-extrabold serif opacity-100 transition-all duration-1000 tracking-tighter leading-none">{state.marbles.length}</p>
+      {/* Main Content */}
+      <main style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        paddingBottom: '128px',
+        position: 'relative'
+      }}>
+        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+          <p style={{
+            fontSize: '72px',
+            fontWeight: 800,
+            fontFamily: 'Georgia, serif',
+            letterSpacing: '-4px',
+            lineHeight: 1,
+            color: currentTheme.text,
+            transition: 'color 1s ease'
+          }}>{state.marbles.length}</p>
         </div>
         
         <MarbleJar marbles={state.marbles} theme={state.theme} />
-        
-        {undoSecondsRemaining > 0 && (
-          <div className="absolute bottom-6 left-4 right-4 z-50 animate-in fade-in slide-in-from-bottom-2 duration-700">
-            <div className={`flex items-center justify-between px-5 py-4 rounded-2xl shadow-xl border backdrop-blur-md transition-colors duration-500 ${
-              state.theme === 'Midnight' ? 'bg-indigo-950/80 border-indigo-400/20 text-indigo-50' : 'bg-white/95 border-stone-200 text-stone-700'
-            }`}>
-              <div className="flex items-center gap-3">
-                <RotateCcw size={14} className="opacity-100" />
-                <span className="text-[11px] font-medium tracking-wide">Jar Restored ({undoSecondsRemaining}s)</span>
-              </div>
-              <button onClick={handleUndoRestore} className={`text-[10px] font-bold uppercase tracking-widest px-4 py-2 rounded-xl transition-all active:scale-95 shadow-sm ${state.theme === 'Midnight' ? 'bg-indigo-600 text-white' : 'bg-stone-800 text-white'}`}>Undo</button>
-            </div>
-          </div>
-        )}
       </main>
 
+      {/* Add Button */}
       <button
-        onClick={() => {
-          setIsCheckInOpen(true);
+        onClick={() => setIsCheckInOpen(true)}
+        style={{
+          position: 'fixed',
+          bottom: '40px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '64px',
+          height: '64px',
+          borderRadius: '50%',
+          boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 40,
+          border: `1px solid ${state.theme === 'Midnight' ? 'rgba(99,102,241,0.4)' : 'rgba(245,245,244,1)'}`,
+          cursor: 'pointer',
+          backgroundColor: state.theme === 'Midnight' ? 'rgba(79,70,229,0.6)' : 'white',
+          color: state.theme === 'Midnight' ? 'rgba(238,242,255,1)' : 'rgba(71,85,105,1)',
+          transition: 'transform 0.1s ease'
         }}
-        className={`fixed bottom-10 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full shadow-2xl flex items-center justify-center transition-all active:scale-90 z-40 ${
-          state.theme === 'Midnight' ? 'bg-indigo-600/60 text-indigo-50 border border-indigo-400/40 shadow-indigo-500/20' : 'bg-white text-slate-700 border border-stone-100 shadow-stone-200/50'
-        }`}
+        onMouseDown={(e) => (e.currentTarget.style.transform = 'translateX(-50%) scale(0.9)')}
+        onMouseUp={(e) => (e.currentTarget.style.transform = 'translateX(-50%) scale(1)')}
+        onMouseLeave={(e) => (e.currentTarget.style.transform = 'translateX(-50%) scale(1)')}
       >
-        <Plus size={28} strokeWidth={2} />
+        <PlusIcon />
       </button>
 
       {/* Add Marble Modal */}
-      {isCheckInOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/40 backdrop-blur-sm overflow-y-auto">
-          <div className="rounded-[3rem] p-8 w-full shadow-2xl animate-in fade-in zoom-in duration-300 max-w-sm border border-white/20 my-auto transition-colors duration-500" style={{ backgroundColor: currentTheme.bg }}>
-            <h2 className={`text-xl font-bold serif mb-6 ${currentTheme.text}`}>A moment for you</h2>
-            
-            {/* Category Picker */}
-            <div className="mb-6">
-              <label className={`text-[10px] font-black uppercase tracking-widest block mb-4 ${currentTheme.text} opacity-70`}>What's the win?</label>
-              <div className="grid grid-cols-3 gap-3">
-                {CATEGORIES.map(cat => (
-                  <button
-                    key={cat.id}
-                    onClick={() => { 
-                      setSelectedCategory(cat); 
-                      setSelectedColor(cat.color); 
-                      setCustomLabel(cat.label);
-                    }}
-                    className={`flex flex-col items-center gap-2 p-3 rounded-2xl border transition-all duration-300 ${selectedCategory.id === cat.id ? (state.theme === 'Midnight' ? 'bg-indigo-600 border-indigo-400' : 'bg-slate-800 border-slate-800 shadow-lg') : (state.theme === 'Midnight' ? 'bg-indigo-950/40 border-indigo-400/20' : 'bg-white border-slate-300')}`}
-                  >
-                    <div className="w-5 h-5 rounded-full shadow-inner" style={{ backgroundColor: cat.color, background: `radial-gradient(circle at 35% 35%, ${cat.color} 0%, rgba(0,0,0,0.3) 110%)` }} />
-                    <span className={`text-[8px] font-bold uppercase tracking-tighter ${selectedCategory.id === cat.id ? 'text-white' : (state.theme === 'Midnight' ? 'text-indigo-300' : 'text-slate-800')}`}>{cat.name}</span>
-                  </button>
+      <Modal
+        isOpen={isCheckInOpen}
+        onClose={resetCheckInForm}
+        theme={state.theme}
+        title="A moment for you"
+      >
+        {/* Category Picker */}
+        <div style={{ marginBottom: '24px' }}>
+          <label style={{
+            fontSize: '10px',
+            fontWeight: 900,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            display: 'block',
+            marginBottom: '16px',
+            color: currentTheme.text,
+            opacity: 0.7
+          }}>What's the win?</label>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: '12px'
+          }}>
+            {CATEGORIES.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => { 
+                  setSelectedCategory(cat); 
+                  setSelectedColor(cat.color); 
+                  setCustomLabel(cat.label);
+                }}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '12px',
+                  borderRadius: '16px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'all 0.3s ease',
+                  ...(selectedCategory.id === cat.id ? buttonStyle : secondaryButtonStyle)
+                }}
+              >
+                <div style={{
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '50%',
+                  boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)',
+                  background: `radial-gradient(circle at 35% 35%, ${cat.color} 0%, rgba(0,0,0,0.3) 110%)`
+                }} />
+                <span style={{
+                  fontSize: '8px',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: '-0.25px'
+                }}>{cat.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Label Input */}
+        <div style={{ marginBottom: '24px' }}>
+          <label style={{
+            fontSize: '10px',
+            fontWeight: 900,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            display: 'block',
+            marginBottom: '12px',
+            color: currentTheme.text,
+            opacity: 0.7
+          }}>Label (optional)</label>
+          <input 
+            type="text" 
+            maxLength={8}
+            value={customLabel}
+            onChange={(e) => setCustomLabel(e.target.value.toUpperCase())}
+            placeholder="E.G. HAPPY"
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              borderRadius: '12px',
+              padding: '12px 16px',
+              fontSize: '14px',
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              outline: 'none',
+              backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.5)' : 'white',
+              border: `1px solid ${state.theme === 'Midnight' ? 'rgba(99,102,241,0.3)' : 'rgba(203,213,225,1)'}`,
+              color: currentTheme.text
+            }}
+          />
+        </div>
+
+        {/* Honoring Past Toggle */}
+        <div style={{
+          marginBottom: '24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px',
+          borderRadius: '16px',
+          backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.3)' : 'rgba(241,245,249,1)',
+          border: `1px solid ${state.theme === 'Midnight' ? 'rgba(99,102,241,0.2)' : 'rgba(203,213,225,1)'}`
+        }}>
+          <span style={{
+            fontSize: '10px',
+            fontWeight: 900,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            color: currentTheme.text
+          }}>Adding history?</span>
+          <button 
+            onClick={() => setIsHonoringPast(!isHonoringPast)}
+            style={{
+              width: '40px',
+              height: '24px',
+              borderRadius: '12px',
+              padding: '4px',
+              border: 'none',
+              cursor: 'pointer',
+              backgroundColor: isHonoringPast 
+                ? (state.theme === 'Midnight' ? 'rgba(99,102,241,1)' : 'rgba(30,41,59,1)') 
+                : 'rgba(203,213,225,1)',
+              transition: 'background-color 0.3s ease'
+            }}
+          >
+            <div style={{
+              width: '16px',
+              height: '16px',
+              backgroundColor: 'white',
+              borderRadius: '50%',
+              transition: 'transform 0.3s ease',
+              transform: isHonoringPast ? 'translateX(16px)' : 'translateX(0)'
+            }} />
+          </button>
+        </div>
+
+        {/* Honoring Count Slider */}
+        {isHonoringPast && (
+          <div style={{ marginBottom: '24px' }}>
+            <label style={{
+              fontSize: '10px',
+              fontWeight: 900,
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              display: 'block',
+              marginBottom: '12px',
+              color: currentTheme.text,
+              opacity: 0.7
+            }}>How many?</label>
+            <input 
+              type="range" 
+              min="1" 
+              max="20" 
+              value={honoringCount} 
+              onChange={(e) => setHonoringCount(parseInt(e.target.value))}
+              style={{
+                width: '100%',
+                height: '8px',
+                borderRadius: '4px',
+                appearance: 'none',
+                backgroundColor: 'rgba(226,232,240,1)',
+                cursor: 'pointer',
+                marginBottom: '8px'
+              }}
+            />
+            <div style={{
+              textAlign: 'center',
+              fontWeight: 700,
+              fontSize: '14px',
+              color: currentTheme.text
+            }}>{honoringCount} marbles</div>
+          </div>
+        )}
+
+        {/* Advanced Options Toggle */}
+        <button 
+          onClick={() => setShowAdvanced(!showAdvanced)} 
+          style={{
+            fontSize: '9px',
+            fontWeight: 700,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            marginBottom: '24px',
+            display: 'block',
+            backgroundColor: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: currentTheme.text,
+            opacity: 0.6,
+            padding: 0
+          }}
+        >
+          {showAdvanced ? "Hide advanced" : "More options"}
+        </button>
+
+        {/* Advanced Options */}
+        {showAdvanced && (
+          <div style={{ marginBottom: '32px' }}>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{
+                fontSize: '10px',
+                fontWeight: 900,
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                display: 'block',
+                marginBottom: '12px',
+                color: currentTheme.text,
+                opacity: 0.7
+              }}>Custom color</label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {MARBLE_COLORS.map(color => (
+                  <button 
+                    key={color} 
+                    onClick={() => setSelectedColor(color)} 
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      border: `2px solid ${selectedColor === color ? 'rgba(30,41,59,1)' : 'rgba(203,213,225,1)'}`,
+                      backgroundColor: color,
+                      cursor: 'pointer',
+                      transform: selectedColor === color ? 'scale(1.1)' : 'scale(1)',
+                      transition: 'all 0.2s ease'
+                    }} 
+                  />
                 ))}
               </div>
             </div>
-
-            {/* Label Input */}
-            <div className="mb-6">
-              <label className={`text-[10px] font-black uppercase tracking-widest block mb-3 ${currentTheme.text} opacity-70`}>Label (optional)</label>
-              <input 
-                type="text" 
-                maxLength={8}
-                value={customLabel}
-                onChange={(e) => setCustomLabel(e.target.value.toUpperCase())}
-                placeholder="E.G. HAPPY"
-                className={`w-full border rounded-xl px-4 py-3 text-sm font-bold tracking-widest focus:ring-2 transition-all outline-none ${state.theme === 'Midnight' ? 'bg-indigo-950/50 border-indigo-400/30 text-indigo-50 ring-indigo-500' : 'bg-white border-slate-300 text-slate-800 ring-slate-400'}`}
-              />
-            </div>
-
-            {/* Honoring Past Toggle */}
-            <div className={`mb-6 flex items-center justify-between p-4 rounded-2xl border ${state.theme === 'Midnight' ? 'bg-indigo-950/30 border-indigo-400/20' : 'bg-slate-100 border-slate-300'}`}>
-              <span className={`text-[10px] font-black uppercase tracking-widest ${currentTheme.text}`}>Adding history?</span>
-              <button 
-                onClick={() => setIsHonoringPast(!isHonoringPast)}
-                className={`w-10 h-6 rounded-full p-1 transition-colors duration-300 ${isHonoringPast ? (state.theme === 'Midnight' ? 'bg-indigo-500' : 'bg-slate-800') : 'bg-slate-300'}`}
-              >
-                <div className={`w-4 h-4 bg-white rounded-full transition-transform duration-300 ${isHonoringPast ? 'translate-x-4' : ''}`} />
-              </button>
-            </div>
-
-            {isHonoringPast && (
-              <div className="mb-6 animate-in slide-in-from-top-2 duration-300">
-                <label className={`text-[10px] font-black uppercase tracking-widest block mb-3 ${currentTheme.text} opacity-70`}>How many?</label>
-                <input 
-                  type="range" min="1" max="20" 
-                  value={honoringCount} 
-                  onChange={(e) => setHonoringCount(parseInt(e.target.value))}
-                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-800 mb-2"
-                />
-                <div className={`text-center font-bold text-sm ${currentTheme.text}`}>{honoringCount} marbles</div>
+            <div>
+              <label style={{
+                fontSize: '10px',
+                fontWeight: 900,
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                display: 'block',
+                marginBottom: '12px',
+                color: currentTheme.text,
+                opacity: 0.7
+              }}>Size</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {(['sm', 'md', 'lg'] as MarbleSize[]).map(s => (
+                  <button 
+                    key={s} 
+                    onClick={() => setSelectedSize(s)} 
+                    style={{
+                      padding: '6px 16px',
+                      borderRadius: '8px',
+                      fontSize: '9px',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      ...(selectedSize === s ? buttonStyle : secondaryButtonStyle)
+                    }}
+                  >{s}</button>
+                ))}
               </div>
-            )}
-
-            <button onClick={() => setShowAdvanced(!showAdvanced)} className={`text-[9px] font-bold uppercase tracking-widest mb-6 block border-b border-transparent ${currentTheme.text} opacity-60 hover:opacity-100`}>
-              {showAdvanced ? "Hide advanced" : "More options"}
-            </button>
-
-            {showAdvanced && (
-              <div className="space-y-6 mb-8 animate-in slide-in-from-top-2 duration-300">
-                <div>
-                  <label className={`text-[10px] font-black uppercase tracking-widest block mb-3 ${currentTheme.text} opacity-70`}>Custom color</label>
-                  <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-                    {MARBLE_COLORS.map(color => (
-                      <button key={color} onClick={() => setSelectedColor(color)} className={`w-6 h-6 shrink-0 rounded-full border-2 transition-all ${selectedColor === color ? 'border-slate-800 scale-110' : 'border-slate-300 opacity-100'}`} style={{ backgroundColor: color }} />
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <label className={`text-[10px] font-black uppercase tracking-widest block mb-3 ${currentTheme.text} opacity-70`}>Size</label>
-                  <div className="flex gap-2">
-                    {(['sm', 'md', 'lg'] as MarbleSize[]).map(s => (
-                      <button key={s} onClick={() => setSelectedSize(s)} className={`px-4 py-1.5 rounded-lg text-[9px] font-bold uppercase border transition-all ${selectedSize === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-800 border-slate-300'}`}>{s}</button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <textarea className={`w-full h-20 p-4 border-b rounded-none focus:ring-0 transition-all bg-transparent placeholder:text-slate-500 resize-none mb-8 text-sm leading-relaxed ${currentTheme.text} ${state.theme === 'Midnight' ? 'border-indigo-400/30 focus:border-indigo-400' : 'border-slate-300 focus:border-slate-500'}`} placeholder="Write a tiny note..." value={reflection} onChange={(e) => setReflection(e.target.value)} />
-            
-            <div className="flex gap-4">
-              <button onClick={() => { setIsCheckInOpen(false); setReflection(''); setShowAdvanced(false); setCustomLabel(selectedCategory.label); setIsHonoringPast(false); setHonoringCount(1); }} className={`flex-1 py-4 text-xs font-bold uppercase tracking-widest active:opacity-50 transition-opacity ${currentTheme.text} opacity-80`}>Close</button>
-              <button onClick={addMarble} disabled={isProcessing} className={`flex-[2] py-4 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-xl active:scale-95 flex items-center justify-center transition-all ${state.theme === 'Midnight' ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-slate-800 hover:bg-slate-900'}`}>{isProcessing ? <Loader2 className="animate-spin" size={18} /> : 'Drop it in'}</button>
             </div>
           </div>
+        )}
+
+        {/* Note Textarea */}
+        <textarea 
+          placeholder="Write a tiny note..."
+          value={reflection}
+          onChange={(e) => setReflection(e.target.value)}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            height: '80px',
+            padding: '16px',
+            borderTop: 'none',
+            borderLeft: 'none',
+            borderRight: 'none',
+            borderBottom: `1px solid ${state.theme === 'Midnight' ? 'rgba(99,102,241,0.3)' : 'rgba(203,213,225,1)'}`,
+            borderRadius: 0,
+            backgroundColor: 'transparent',
+            resize: 'none',
+            marginBottom: '32px',
+            fontSize: '14px',
+            lineHeight: 1.6,
+            color: currentTheme.text,
+            outline: 'none'
+          }}
+        />
+        
+        {/* Action Buttons */}
+        <div style={{ display: 'flex', gap: '16px' }}>
+          <button 
+            onClick={resetCheckInForm} 
+            style={{
+              flex: 1,
+              padding: '16px',
+              fontSize: '12px',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              backgroundColor: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              color: currentTheme.text,
+              opacity: 0.8
+            }}
+          >Close</button>
+          <button 
+            onClick={addMarble} 
+            disabled={isProcessing}
+            style={{
+              flex: 2,
+              padding: '16px',
+              borderRadius: '16px',
+              fontWeight: 700,
+              fontSize: '12px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)',
+              cursor: 'pointer',
+              border: 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'transform 0.1s ease',
+              ...buttonStyle
+            }}
+            onMouseDown={(e) => (e.currentTarget.style.transform = 'scale(0.95)')}
+            onMouseUp={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+            onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+          >
+            Drop it in
+          </button>
         </div>
-      )}
+      </Modal>
 
       {/* Settings Modal */}
-      {showSettings && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 animate-in fade-in duration-300 overflow-y-auto transition-colors duration-500" style={{ backgroundColor: currentTheme.bg }}>
-          <div className="w-full h-full flex flex-col max-w-md">
-            <div className="flex justify-between items-center mb-12">
-              <h2 className={`text-3xl font-bold serif ${currentTheme.text}`}>Settings</h2>
-              <button onClick={() => setShowSettings(false)} className={`p-3 rounded-full transition-colors ${state.theme === 'Midnight' ? 'bg-indigo-900 text-indigo-300' : 'bg-slate-200 text-slate-600'}`}><Plus size={24} className="rotate-45" /></button>
+      <Modal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        theme={state.theme}
+        title="Settings"
+        fullScreen
+      >
+        <div style={{ paddingBottom: '48px' }}>
+          {/* Sound Settings */}
+          <div style={{
+            padding: '32px',
+            borderRadius: '40px',
+            marginBottom: '48px',
+            backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.3)' : 'white',
+            border: `1px solid ${state.theme === 'Midnight' ? 'rgba(99,102,241,0.2)' : 'rgba(226,232,240,1)'}`,
+            boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+              <VolumeIcon muted={!state.soundEnabled} />
+              <h3 style={{
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                fontSize: '10px',
+                letterSpacing: '0.1em',
+                color: currentTheme.text
+              }}>Sounds</h3>
             </div>
-            <div className="space-y-12 pb-12">
-              
-              {/* Audio Settings */}
-              <div className={`p-8 rounded-[2.5rem] border shadow-sm ${state.theme === 'Midnight' ? 'bg-indigo-950/30 border-indigo-400/20' : 'bg-white border-slate-200'}`}>
-                <div className="flex items-center gap-3 mb-6">
-                  <Volume2 size={18} className={currentTheme.text} />
-                  <h3 className={`font-bold uppercase text-[10px] tracking-widest ${currentTheme.text}`}>Sounds & Delight</h3>
-                </div>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs font-medium ${currentTheme.text}`}>Drop chime</span>
-                    <button 
-                      onClick={() => setState({...state, soundEnabled: !state.soundEnabled})}
-                      className={`w-10 h-6 rounded-full p-1 transition-colors duration-300 ${state.soundEnabled ? (state.theme === 'Midnight' ? 'bg-indigo-500' : 'bg-slate-800') : 'bg-slate-300'}`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform duration-300 ${state.soundEnabled ? 'translate-x-4' : ''}`} />
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs font-medium ${currentTheme.text}`}>Warm ambient hum</span>
-                    <button 
-                      onClick={() => setState({...state, ambientEnabled: !state.ambientEnabled})}
-                      className={`w-10 h-6 rounded-full p-1 transition-colors duration-300 ${state.ambientEnabled ? (state.theme === 'Midnight' ? 'bg-indigo-500' : 'bg-slate-800') : 'bg-slate-300'}`}
-                    >
-                      <div className={`w-4 h-4 bg-white rounded-full transition-transform duration-300 ${state.ambientEnabled ? 'translate-x-4' : ''}`} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Cloud Sync */}
-              <div className={`p-8 rounded-[2.5rem] border shadow-sm ${state.theme === 'Midnight' ? 'bg-indigo-950/30 border-indigo-400/20' : 'bg-white border-slate-200'}`}>
-                <div className="flex items-center gap-3 mb-6">
-                  <Cloud size={18} className={state.theme === 'Midnight' ? 'text-indigo-400' : 'text-slate-700'} />
-                  <h3 className={`font-bold uppercase text-[10px] tracking-widest ${currentTheme.text}`}>Cloud Vault</h3>
-                </div>
-                {!userEmail ? (
-                  <div className="space-y-4">
-                    <p className={`text-[11px] leading-relaxed font-medium ${currentTheme.text}`}>Keep your jar safe in the cloud.</p>
-                    <div className="flex gap-2">
-                      <input type="email" placeholder="email..." className={`flex-1 border rounded-xl px-4 py-3 text-sm focus:ring-2 transition-all outline-none ${state.theme === 'Midnight' ? 'bg-indigo-950/50 border-indigo-400/30 text-indigo-50 ring-indigo-500' : 'bg-slate-50 border-slate-300 text-slate-800 ring-indigo-200'}`} value={emailInput} onChange={(e) => setEmailInput(e.target.value)} />
-                      <button onClick={handleMagicLink} disabled={syncLoading} className={`px-5 py-3 rounded-xl font-bold text-[10px] uppercase tracking-widest disabled:opacity-50 active:scale-95 transition-all text-white ${state.theme === 'Midnight' ? 'bg-indigo-600' : 'bg-slate-800'}`}>{syncLoading ? <Loader2 className="animate-spin" size={14} /> : "Link"}</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    <div className="flex justify-between items-center">
-                      <span className={`text-xs font-medium ${currentTheme.text}`}>{userEmail}</span>
-                      <button onClick={() => supabase.auth.signOut()} className={`text-[10px] font-bold uppercase tracking-widest hover:opacity-70 ${state.theme === 'Midnight' ? 'text-rose-400' : 'text-rose-600'}`}>Out</button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button onClick={handleCloudSave} disabled={syncLoading} className={`flex flex-col items-center gap-2 py-5 rounded-2xl border transition-all active:scale-95 group ${state.theme === 'Midnight' ? 'bg-indigo-900/40 border-indigo-400/20' : 'bg-indigo-50/50 border-indigo-100'}`}><CloudUpload className="text-indigo-600" size={20} /><span className={`text-[9px] font-bold uppercase ${state.theme === 'Midnight' ? 'text-indigo-300' : 'text-indigo-800'}`}>Save</span></button>
-                      <button onClick={handleCloudRestore} disabled={syncLoading} className={`flex flex-col items-center gap-2 py-5 rounded-2xl border transition-all active:scale-95 group ${state.theme === 'Midnight' ? 'bg-stone-900/40 border-stone-700/30' : 'bg-stone-50 border-stone-300'}`}><CloudDownload className="text-stone-800" size={20} /><span className={`text-[9px] font-bold uppercase ${currentTheme.text}`}>Load</span></button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className={`text-[10px] uppercase tracking-widest font-extrabold block mb-5 ${currentTheme.text}`}>Atmosphere</label>
-                <div className="grid grid-cols-3 gap-4">{(['Classic', 'Midnight', 'Ceramic'] as JarTheme[]).map(t => (<button key={t} onClick={() => setState({...state, theme: t})} className={`py-5 rounded-2xl text-[10px] font-black transition-all border-2 ${state.theme === t ? (state.theme === 'Midnight' ? 'bg-indigo-600 text-white border-indigo-400' : 'bg-slate-800 text-white border-slate-800 shadow-lg scale-105') : (state.theme === 'Midnight' ? 'bg-indigo-950/40 text-indigo-300 border-indigo-400/20' : 'bg-white border-slate-300 hover:border-slate-500')}`}>{t}</button>))}</div>
-              </div>
-              <div>
-                <label className={`text-[10px] uppercase tracking-widest font-extrabold block mb-5 ${currentTheme.text}`}>Voice</label>
-                <div className="grid grid-cols-3 gap-4">{(['Zen', 'Poetic', 'Grounded'] as TonePreference[]).map(t => (<button key={t} onClick={() => setState({...state, tone: t})} className={`py-5 rounded-2xl text-[10px] font-black transition-all border-2 ${state.tone === t ? (state.theme === 'Midnight' ? 'bg-indigo-600 text-white border-indigo-400' : 'bg-slate-800 text-white border-slate-800 shadow-lg scale-105') : (state.theme === 'Midnight' ? 'bg-indigo-950/40 text-indigo-300 border-indigo-400/20' : 'bg-white border-slate-300 hover:border-slate-500')}`}>{t}</button>))}</div>
-              </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '12px', fontWeight: 500, color: currentTheme.text }}>Drop chime</span>
+              <button 
+                onClick={() => setState({...state, soundEnabled: !state.soundEnabled})}
+                style={{
+                  width: '40px',
+                  height: '24px',
+                  borderRadius: '12px',
+                  padding: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  backgroundColor: state.soundEnabled 
+                    ? (state.theme === 'Midnight' ? 'rgba(99,102,241,1)' : 'rgba(30,41,59,1)') 
+                    : 'rgba(203,213,225,1)',
+                  transition: 'background-color 0.3s ease'
+                }}
+              >
+                <div style={{
+                  width: '16px',
+                  height: '16px',
+                  backgroundColor: 'white',
+                  borderRadius: '50%',
+                  transition: 'transform 0.3s ease',
+                  transform: state.soundEnabled ? 'translateX(16px)' : 'translateX(0)'
+                }} />
+              </button>
             </div>
           </div>
-        </div>
-      )}
 
-      {currentMilestoneMessage && <EncouragementModal count={state.marbles.length} message={currentMilestoneMessage} onClose={() => setCurrentMilestoneMessage(null)} themeBg={currentTheme.bg} themeText={currentTheme.text} isDark={state.theme === 'Midnight'} />}
-      
-      {showHistory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 transition-colors duration-500" style={{ backgroundColor: currentTheme.bg }}>
-          <div className="w-full h-full flex flex-col max-w-md">
-            <div className={`flex justify-between items-center mb-8 shrink-0 ${currentTheme.text}`}>
-              <h2 className="text-3xl font-bold serif">What's in here</h2>
-              <button onClick={() => setShowHistory(false)} className={`p-3 opacity-100 active:scale-90 transition-transform ${state.theme === 'Midnight' ? 'text-indigo-300' : 'text-slate-800'}`}><Plus size={28} className="rotate-45" /></button>
+          {/* Theme Selection */}
+          <div style={{ marginBottom: '48px' }}>
+            <label style={{
+              fontSize: '10px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              fontWeight: 800,
+              display: 'block',
+              marginBottom: '20px',
+              color: currentTheme.text
+            }}>Atmosphere</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+              {(['Classic', 'Midnight', 'Ceramic'] as JarTheme[]).map(t => (
+                <button 
+                  key={t} 
+                  onClick={() => setState({...state, theme: t})} 
+                  style={{
+                    padding: '20px',
+                    borderRadius: '16px',
+                    fontSize: '10px',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    transform: state.theme === t ? 'scale(1.05)' : 'scale(1)',
+                    border: `2px solid ${state.theme === t 
+                      ? (state.theme === 'Midnight' ? 'rgba(99,102,241,1)' : 'rgba(30,41,59,1)') 
+                      : (state.theme === 'Midnight' ? 'rgba(99,102,241,0.2)' : 'rgba(203,213,225,1)')}`,
+                    ...(state.theme === t ? buttonStyle : secondaryButtonStyle)
+                  }}
+                >{t}</button>
+              ))}
             </div>
-            <div className="flex-1 overflow-y-auto space-y-5 pb-24 scrollbar-hide">
-              {[...state.marbles].reverse().map((marble) => (
-                <div key={marble.id} className={`p-7 rounded-[2.5rem] border shadow-sm backdrop-blur-md ${state.theme === 'Midnight' ? 'bg-indigo-900/30 border-indigo-400/20' : 'bg-white/90 border-stone-200'}`}>
-                  <div className="flex justify-between items-start mb-2">
-                    <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${currentTheme.text}`}>{new Date(marble.timestamp).toLocaleDateString()}</span>
-                    {marble.category && <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full uppercase tracking-widest border ${state.theme === 'Midnight' ? 'bg-indigo-800/50 text-indigo-100 border-indigo-400/30' : 'bg-slate-100 text-slate-800 border-slate-200'}`}>{marble.category}</span>}
-                  </div>
-                  <p className={`italic leading-relaxed font-semibold ${currentTheme.text}`}>{marble.note || "A little win."}</p>
-                </div>
+          </div>
+
+          {/* Tone Selection */}
+          <div>
+            <label style={{
+              fontSize: '10px',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              fontWeight: 800,
+              display: 'block',
+              marginBottom: '20px',
+              color: currentTheme.text
+            }}>Voice</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+              {(['Zen', 'Poetic', 'Grounded'] as TonePreference[]).map(t => (
+                <button 
+                  key={t} 
+                  onClick={() => setState({...state, tone: t})} 
+                  style={{
+                    padding: '20px',
+                    borderRadius: '16px',
+                    fontSize: '10px',
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    transform: state.tone === t ? 'scale(1.05)' : 'scale(1)',
+                    border: `2px solid ${state.tone === t 
+                      ? (state.theme === 'Midnight' ? 'rgba(99,102,241,1)' : 'rgba(30,41,59,1)') 
+                      : (state.theme === 'Midnight' ? 'rgba(99,102,241,0.2)' : 'rgba(203,213,225,1)')}`,
+                    ...(state.tone === t ? buttonStyle : secondaryButtonStyle)
+                  }}
+                >{t}</button>
               ))}
             </div>
           </div>
         </div>
+      </Modal>
+
+      {/* History Modal */}
+      <Modal
+        isOpen={showHistory}
+        onClose={() => setShowHistory(false)}
+        theme={state.theme}
+        title="What's in here"
+        fullScreen
+      >
+        <div style={{ paddingBottom: '96px' }}>
+          {state.marbles.length === 0 ? (
+            <p style={{ 
+              textAlign: 'center', 
+              color: currentTheme.text, 
+              opacity: 0.6,
+              fontStyle: 'italic',
+              marginTop: '48px'
+            }}>
+              No marbles yet. Drop your first one.
+            </p>
+          ) : (
+            [...state.marbles].reverse().map((marble) => (
+              <div 
+                key={marble.id} 
+                style={{
+                  padding: '28px',
+                  borderRadius: '40px',
+                  marginBottom: '20px',
+                  backdropFilter: 'blur(8px)',
+                  backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.3)' : 'rgba(255,255,255,0.9)',
+                  border: `1px solid ${state.theme === 'Midnight' ? 'rgba(99,102,241,0.2)' : 'rgba(214,211,209,1)'}`,
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}
+              >
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'flex-start', 
+                  marginBottom: '8px' 
+                }}>
+                  <span style={{
+                    fontSize: '10px',
+                    fontWeight: 900,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.2em',
+                    color: currentTheme.text
+                  }}>
+                    {new Date(marble.timestamp).toLocaleDateString()}
+                  </span>
+                  {marble.category && (
+                    <span style={{
+                      fontSize: '8px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '9999px',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.1em',
+                      backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.5)' : 'rgba(241,245,249,1)',
+                      color: state.theme === 'Midnight' ? 'rgba(199,210,254,1)' : 'rgba(30,41,59,1)',
+                      border: `1px solid ${state.theme === 'Midnight' ? 'rgba(99,102,241,0.3)' : 'rgba(226,232,240,1)'}`
+                    }}>
+                      {marble.category}
+                    </span>
+                  )}
+                </div>
+                <p style={{
+                  fontStyle: 'italic',
+                  lineHeight: 1.6,
+                  fontWeight: 600,
+                  color: currentTheme.text
+                }}>{marble.note || "A little win."}</p>
+              </div>
+            ))
+          )}
+        </div>
+      </Modal>
+
+      {/* Milestone Celebration */}
+      {currentMilestoneMessage && (
+        <EncouragementModal 
+          count={state.marbles.length} 
+          message={currentMilestoneMessage} 
+          onClose={() => setCurrentMilestoneMessage(null)} 
+          theme={state.theme}
+        />
       )}
     </div>
   );
