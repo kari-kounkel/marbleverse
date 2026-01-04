@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Settings as SettingsIcon, Plus, History, Loader2, Sparkles, Layers, ChevronDown, Cloud, CloudDownload, CloudUpload, LogOut, RotateCcw, Volume2, VolumeX, Music } from 'lucide-react';
 import { AppState, Marble, MARBLE_COLORS, MILESTONES, TonePreference, JarTheme, THEMES, CATEGORIES, MarbleSize } from './types';
-import MarbleJar from './components/MarbleJar';
-import EncouragementModal from './components/EncouragementModal';
+import MarbleJar from './MarbleJar';
+import EncouragementModal from './EncouragementModal';
 import { generateEncouragement } from './services/geminiService';
 import { supabase, loginWithMagicLink, saveToCloud, restoreFromCloud } from './services/syncService';
 
