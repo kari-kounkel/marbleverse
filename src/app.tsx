@@ -3,8 +3,8 @@ import { Settings as SettingsIcon, Plus, History, Loader2, Sparkles, Layers, Che
 import { AppState, Marble, MARBLE_COLORS, MILESTONES, TonePreference, JarTheme, THEMES, CATEGORIES, MarbleSize } from './types';
 import MarbleJar from './MarbleJar';
 import EncouragementModal from './EncouragementModal';
-import { generateEncouragement } from './services/geminiService';
-import { supabase, loginWithMagicLink, saveToCloud, restoreFromCloud } from './services/syncService';
+import { generateEncouragement } from './geminiService';
+import { supabase, loginWithMagicLink, saveToCloud, restoreFromCloud } from './syncService';
 
 const STORAGE_KEY = 'marbleverse_state_v3';
 const UNDO_KEY = 'marbleverse_undo_backup_v1';
