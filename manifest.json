@@ -1,0 +1,17 @@
+{
+  "name": "Marbleverse",
+  "short_name": "Marbles",
+  "description": "A gentle space for honoring small wins.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#E3F3F1",
+  "theme_color": "#E3F3F1",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/5900/5900534.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
