@@ -1,4 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+// ============ SUPABASE ============
+const supabase = createClient(
+  'https://zlcuuweuzcgaisykuomy.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsY3V1d2V1emNnYWlzeWt1b215Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1NzA3ODUsImV4cCI6MjA4MzE0Njc4NX0.9bt8AuP89Tm2-lwqxy-0inNjzN7Mhg254qanFG9--ho'
+);
 
 type TonePreference = 'Zen' | 'Poetic' | 'Grounded';
 type JarTheme = 'Classic' | 'Midnight' | 'Ceramic';
@@ -32,6 +39,16 @@ interface AppState {
   soundEnabled: boolean;
   milestoneDates: MilestoneDate[];
 }
+
+const DEFAULT_STATE: AppState = {
+  marbles: [],
+  tone: 'Zen',
+  theme: 'Classic',
+  lastCheckIn: null,
+  milestonesReached: [],
+  soundEnabled: true,
+  milestoneDates: []
+};
 
 const STORAGE_KEY = 'marbleverse_state_v4';
 const MILESTONES = [7, 13, 30, 60, 90, 100, 365];
@@ -128,12 +145,6 @@ const useAudio = () => {
   return { playDrop };
 };
 
-const Icon = ({ d, size = 18 }: { d: string; size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d={d} />
-  </svg>
-);
-
 const MarbleJar: React.FC<{ marbles: Marble[]; theme: JarTheme }> = ({ marbles, theme }) => {
   const t = THEMES[theme];
   return (
@@ -193,14 +204,21 @@ const App: React.FC = () => {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) { const p = JSON.parse(saved); if (!p.milestoneDates) p.milestoneDates = []; return p; }
     } catch (e) { console.error(e); }
-    return { marbles: [], tone: 'Zen' as TonePreference, theme: 'Classic' as JarTheme, lastCheckIn: null, milestonesReached: [], soundEnabled: true, milestoneDates: [] };
+    return DEFAULT_STATE;
   });
+
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [authMessage, setAuthMessage] = useState('');
 
   const { playDrop } = useAudio();
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showMilestones, setShowMilestones] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
   const [milestoneMsg, setMilestoneMsg] = useState<string | null>(null);
   const [reflection, setReflection] = useState('');
   const [isHonoringPast, setIsHonoringPast] = useState(false);
@@ -214,7 +232,73 @@ const App: React.FC = () => {
   const [newMilestoneName, setNewMilestoneName] = useState('');
   const [newMilestoneDate, setNewMilestoneDate] = useState('');
 
+  // Check for existing session on load
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthLoading(false);
+      if (session?.user) loadFromCloud(session.user.id);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) loadFromCloud(session.user.id);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Save to localStorage
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { console.error(e); } }, [state]);
+
+  // Auto-save to cloud when state changes (if logged in)
+  useEffect(() => {
+    if (user && !authLoading) {
+      const timeout = setTimeout(() => saveToCloud(), 2000);
+      return () => clearTimeout(timeout);
+    }
+  }, [state, user]);
+
+  const loadFromCloud = async (userId: string) => {
+    try {
+      const { data, error } = await supabase.from('vaults').select('blob').eq('user_id', userId).single();
+      if (error && error.code !== 'PGRST116') throw error;
+      if (data?.blob) {
+        setState(data.blob as AppState);
+      }
+    } catch (e) { console.error('Load error:', e); }
+  };
+
+  const saveToCloud = async () => {
+    if (!user) return;
+    setSyncLoading(true);
+    try {
+      const { error } = await supabase.from('vaults').upsert({ user_id: user.id, blob: state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+      if (error) throw error;
+    } catch (e) { console.error('Save error:', e); }
+    setSyncLoading(false);
+  };
+
+  const handleLogin = async () => {
+    if (!emailInput.trim()) return;
+    setSyncLoading(true);
+    setAuthMessage('');
+    try {
+      const { error } = await supabase.auth.signInWithOtp({ 
+        email: emailInput.trim(),
+        options: { emailRedirectTo: window.location.origin }
+      });
+      if (error) throw error;
+      setAuthMessage('Check your email for a magic link!');
+    } catch (e: any) { 
+      setAuthMessage('Error: ' + e.message); 
+    }
+    setSyncLoading(false);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setShowAccount(false);
+  };
 
   const addMarble = () => {
     if (isProcessing) return;
@@ -246,16 +330,26 @@ const App: React.FC = () => {
   const btnStyle = { backgroundColor: t.accent, color: 'white' };
   const btnSecStyle = { backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.4)' : 'white', color: t.text, border: '1px solid ' + t.jarBorder };
 
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg }}>
+        <p style={{ color: t.textSoft }}>Loading...</p>
+      </div>
+    );
+  }
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', maxWidth: '448px', margin: '0 auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', overflow: 'hidden', position: 'relative', backgroundColor: t.bg, fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
       <style>{`@keyframes marbleEnter { from { transform: translateY(-100px) scale(0.5); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }`}</style>
       
       <header style={{ padding: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.05)', position: 'sticky', top: 0, zIndex: 30 }}>
         <h1 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: t.textSoft }}>Marbleverse</h1>
-        <div style={{ display: 'flex', gap: '4px' }}>
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          {syncLoading && <span style={{ fontSize: '10px', color: t.textSoft }}>saving...</span>}
           <button onClick={() => setShowMilestones(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft }}>📅</button>
           <button onClick={() => setShowHistory(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft }}>🕐</button>
           <button onClick={() => setShowSettings(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft }}>⚙️</button>
+          <button onClick={() => setShowAccount(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: user ? t.accent : t.textSoft }}>👤</button>
         </div>
       </header>
 
@@ -278,6 +372,30 @@ const App: React.FC = () => {
 
       <button onClick={() => setIsCheckInOpen(true)} style={{ position: 'fixed', bottom: '40px', left: '50%', transform: 'translateX(-50%)', width: '64px', height: '64px', borderRadius: '50%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 40, border: '1px solid ' + t.jarBorder, cursor: 'pointer', backgroundColor: state.theme === 'Midnight' ? 'rgba(79,70,229,0.6)' : 'white', color: t.textSoft, fontSize: '28px' }}>+</button>
 
+      {/* Account Modal */}
+      <Modal isOpen={showAccount} onClose={() => { setShowAccount(false); setAuthMessage(''); }} theme={state.theme} title="Account" fullScreen>
+        <div style={{ paddingBottom: '48px' }}>
+          {user ? (
+            <div>
+              <div style={{ padding: '24px', borderRadius: '24px', backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.3)' : 'rgba(78,205,196,0.1)', border: '1px solid ' + t.jarBorder, marginBottom: '24px' }}>
+                <p style={{ fontSize: '12px', color: t.textSoft, marginBottom: '8px' }}>Logged in as</p>
+                <p style={{ fontSize: '16px', fontWeight: 600, color: t.text }}>{user.email}</p>
+              </div>
+              <p style={{ fontSize: '13px', color: t.textSoft, marginBottom: '24px', lineHeight: 1.6 }}>Your marbles automatically sync to the cloud. Use the same email on any device to access them.</p>
+              <button onClick={handleLogout} style={{ width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', border: '1px solid ' + t.jarBorder, backgroundColor: 'transparent', color: t.text }}>Log Out</button>
+            </div>
+          ) : (
+            <div>
+              <p style={{ fontSize: '13px', color: t.textSoft, marginBottom: '24px', lineHeight: 1.6 }}>Sign in to save your marbles to the cloud and access them on any device.</p>
+              <input type="email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} placeholder="your@email.com" style={{ width: '100%', boxSizing: 'border-box', borderRadius: '12px', padding: '14px 16px', fontSize: '14px', marginBottom: '12px', outline: 'none', backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.5)' : 'white', border: '1px solid ' + t.jarBorder, color: t.text }} />
+              <button onClick={handleLogin} disabled={syncLoading} style={{ width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', border: 'none', opacity: syncLoading ? 0.5 : 1, ...btnStyle }}>{syncLoading ? 'Sending...' : 'Send Magic Link'}</button>
+              {authMessage && <p style={{ marginTop: '16px', fontSize: '13px', color: authMessage.includes('Error') ? '#ef4444' : t.accent, textAlign: 'center' }}>{authMessage}</p>}
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Add Marble Modal */}
       <Modal isOpen={isCheckInOpen} onClose={resetForm} theme={state.theme} title="A moment for you">
         <div style={{ marginBottom: '24px' }}>
           <label style={{ fontSize: '10px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', display: 'block', marginBottom: '16px', color: t.textSoft }}>What's the win?</label>
@@ -331,6 +449,7 @@ const App: React.FC = () => {
         </div>
       </Modal>
 
+      {/* Milestones Modal */}
       <Modal isOpen={showMilestones} onClose={() => setShowMilestones(false)} theme={state.theme} title="Important Dates" fullScreen>
         <div style={{ paddingBottom: '48px' }}>
           <p style={{ fontSize: '13px', lineHeight: 1.6, color: t.textSoft, marginBottom: '24px' }}>Track the days since something important — a sober date, a new habit, a fresh start.</p>
@@ -359,6 +478,7 @@ const App: React.FC = () => {
         </div>
       </Modal>
 
+      {/* Settings Modal */}
       <Modal isOpen={showSettings} onClose={() => setShowSettings(false)} theme={state.theme} title="Settings" fullScreen>
         <div style={{ paddingBottom: '48px' }}>
           <div style={{ padding: '32px', borderRadius: '40px', marginBottom: '48px', backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.3)' : 'white', border: '1px solid ' + t.jarBorder }}>
@@ -385,6 +505,7 @@ const App: React.FC = () => {
         </div>
       </Modal>
 
+      {/* History Modal */}
       <Modal isOpen={showHistory} onClose={() => setShowHistory(false)} theme={state.theme} title="What's in here" fullScreen>
         <div style={{ paddingBottom: '96px' }}>
           {state.marbles.length === 0 ? (<p style={{ textAlign: 'center', color: t.textSoft, fontStyle: 'italic', marginTop: '48px' }}>No marbles yet. Drop your first one.</p>) : (
@@ -401,6 +522,7 @@ const App: React.FC = () => {
         </div>
       </Modal>
 
+      {/* Milestone Message Modal */}
       {milestoneMsg && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', backgroundColor: 'rgba(15,23,42,0.3)', backdropFilter: 'blur(4px)' }}>
           <div style={{ backgroundColor: t.bg, borderRadius: '40px', padding: '32px', maxWidth: '384px', width: '100%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid ' + t.jarBorder, textAlign: 'center' }}>
