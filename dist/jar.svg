@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 260">
+  <defs>
+    <linearGradient id="glassGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#e8f4f3;stop-opacity:0.9"/>
+      <stop offset="20%" style="stop-color:#ffffff;stop-opacity:0.95"/>
+      <stop offset="50%" style="stop-color:#f0f9f8;stop-opacity:0.85"/>
+      <stop offset="80%" style="stop-color:#ffffff;stop-opacity:0.9"/>
+      <stop offset="100%" style="stop-color:#d4e8e6;stop-opacity:0.9"/>
+    </linearGradient>
+    <linearGradient id="lidGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f5f5f5"/>
+      <stop offset="30%" style="stop-color:#e0e0e0"/>
+      <stop offset="70%" style="stop-color:#c0c0c0"/>
+      <stop offset="100%" style="stop-color:#a8a8a8"/>
+    </linearGradient>
+    <radialGradient id="marbleTeal" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#7EEEE4"/>
+      <stop offset="100%" style="stop-color:#2A9D8F"/>
+    </radialGradient>
+    <radialGradient id="marblePurple" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#C4A8E0"/>
+      <stop offset="100%" style="stop-color:#7B5BA0"/>
+    </radialGradient>
+    <radialGradient id="marbleYellow" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#FFE566"/>
+      <stop offset="100%" style="stop-color:#D4A000"/>
+    </radialGradient>
+    <radialGradient id="marbleGreen" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#90EE90"/>
+      <stop offset="100%" style="stop-color:#4CAF50"/>
+    </radialGradient>
+    <radialGradient id="marblePink" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#FFB6C1"/>
+      <stop offset="100%" style="stop-color:#E91E63"/>
+    </radialGradient>
+    <radialGradient id="marbleBlue" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#7EB3FF"/>
+      <stop offset="100%" style="stop-color:#2962FF"/>
+    </radialGradient>
+    <radialGradient id="marbleOrange" cx="35%" cy="35%">
+      <stop offset="0%" style="stop-color:#FFB380"/>
+      <stop offset="100%" style="stop-color:#E65100"/>
+    </radialGradient>
+  </defs>
+  
+  <!-- Jar body -->
+  <path d="M45 55 Q45 50 55 48 L145 48 Q155 50 155 55 L160 220 Q160 250 100 250 Q40 250 40 220 Z" fill="url(#glassGrad)" stroke="#b8d4d0" stroke-width="2"/>
+  
+  <!-- Glass reflection left -->
+  <path d="M55 60 Q50 60 50 70 L48 200 Q48 210 55 215" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="8" stroke-linecap="round"/>
+  
+  <!-- Glass reflection right -->
+  <path d="M150 80 L152 180" fill="none" stroke="rgba(255,255,255,0.3)" stroke-width="4" stroke-linecap="round"/>
+  
+  <!-- Jar neck -->
+  <rect x="55" y="35" width="90" height="18" rx="3" fill="url(#glassGrad)" stroke="#b8d4d0" stroke-width="1.5"/>
+  
+  <!-- Lid base -->
+  <ellipse cx="100" cy="35" rx="52" ry="8" fill="url(#lidGrad)" stroke="#999" stroke-width="1"/>
+  
+  <!-- Lid top -->
+  <rect x="48" y="12" width="104" height="23" rx="5" fill="url(#lidGrad)" stroke="#999" stroke-width="1"/>
+  
+  <!-- Lid ridges -->
+  <line x1="55" y1="14" x2="55" y2="33" stroke="#bbb" stroke-width="1"/>
+  <line x1="70" y1="14" x2="70" y2="33" stroke="#bbb" stroke-width="1"/>
+  <line x1="85" y1="14" x2="85" y2="33" stroke="#bbb" stroke-width="1"/>
+  <line x1="100" y1="14" x2="100" y2="33" stroke="#bbb" stroke-width="1"/>
+  <line x1="115" y1="14" x2="115" y2="33" stroke="#bbb" stroke-width="1"/>
+  <line x1="130" y1="14" x2="130" y2="33" stroke="#bbb" stroke-width="1"/>
+  <line x1="145" y1="14" x2="145" y2="33" stroke="#bbb" stroke-width="1"/>
+  
+  <!-- Marbles - bottom layer -->
+  <circle cx="70" cy="225" r="18" fill="url(#marbleYellow)"/>
+  <ellipse cx="63" cy="218" rx="5" ry="5" fill="rgba(255,255,255,0.5)"/>
+  
+  <circle cx="105" cy="228" r="17" fill="url(#marbleYellow)"/>
+  <ellipse cx="98" cy="221" rx="5" ry="4" fill="rgba(255,255,255,0.5)"/>
+  
+  <circle cx="138" cy="222" r="18" fill="url(#marbleYellow)"/>
+  <ellipse cx="131" cy="215" rx="5" ry="5" fill="rgba(255,255,255,0.5)"/>
+  
+  <!-- Marbles - second layer -->
+  <circle cx="55" cy="195" r="16" fill="url(#marbleTeal)"/>
+  <ellipse cx="48" cy="188" rx="4" ry="4" fill="rgba(255,255,255,0.5)"/>
+  
+  <circle cx="88" cy="200" r="17" fill="url(#marbleTeal)"/>
+  <ellipse cx="81" cy="193" rx="5" ry="4" fill="rgba(255,255,255,0.5)"/>
+  
+  <circle cx="122" cy="198" r="16" fill="url(#marbleTeal)"/>
+  <ellipse cx="115" cy="191" rx="4" ry="4" fill="rgba(255,255,255,0.5)"/>
+  
+  <circle cx="150" cy="192" r="15" fill="url(#marbleTeal)"/>
+  <ellipse cx="143" cy="185" rx="4" ry="4" fill="rgba(255,255,255,0.5)"/>
+  
+  <!-- Marbles - third layer -->
+  <circle cx="65" cy="168" r="15" fill="url(#marblePurple)"/>
+  <ellipse cx="59" cy="162" rx="4" ry="3" fill="rgba(255,255,255,0.5)"/>
+  
+  <circle cx="98" cy="172" r="16" fill="url(#marblePurple)"/>
+  <ellipse cx="91" cy="165" rx="4" ry="4" fill="rgba(255,255,255,0.5)"/>
+  
+  <circle cx="132" cy="168" r="15" fill="url(#marblePurple)"/>
+  <ellipse cx="126" cy="162" rx="4" ry="3" fill="rgba(255,255,255,0.5)"/>
+  
+  <!-- Marbles - fourth layer -->
+  <circle cx="78" cy="142" r="14" fill="url(#marbleGreen)"/>
+  <ellipse cx="72" cy="136" rx="4" ry="3" fill="rgba(255,255,255,0.5)"/>
+  
+  <circle cx="112" cy="145" r="15" fill="url(#marblePink)"/>
+  <ellipse cx="105" cy="138" rx="4" ry="4" fill="rgba(255,255,255,0.5)"/>
+  
+  <circle cx="145" cy="148" r="13" fill="url(#marbleBlue)"/>
+  <ellipse cx="139" cy="142" rx="3" ry="3" fill="rgba(255,255,255,0.5)"/>
+  
+  <!-- Marbles - top layer -->
+  <circle cx="92" cy="118" r="14" fill="url(#marbleOrange)"/>
+  <ellipse cx="86" cy="112" rx="4" ry="3" fill="rgba(255,255,255,0.5)"/>
+  
+  <circle cx="125" cy="122" r="13" fill="url(#marblePurple)"/>
+  <ellipse cx="119" cy="116" rx="3" ry="3" fill="rgba(255,255,255,0.5)"/>
+</svg>

@@ -112,7 +112,8 @@ const ONBOARDING_SLIDES = [
   { title: "Welcome to Marbleverse", subtitle: "A jar for your wins", description: "Every small victory deserves a marble. Sobriety. Hydration. Movement. Rest. Whatever you're tracking, drop it in the jar." },
   { title: "Track Important Dates", subtitle: "Count the days that matter", description: "Add your sober date, your fresh-start date, or any milestone. Watch the days add up right on your home screen." },
   { title: "Choose Your Voice", subtitle: "Encouragement your way", description: "Pick Zen, Poetic, Grounded, or Christian. When you hit a milestone, you'll get a message in the voice that speaks to you." },
-  { title: "Sync Across Devices", subtitle: "Your marbles follow you", description: "Sign in with your email to save your jar to the cloud. Same marbles on your phone, tablet, and computer." }
+  { title: "Sync Across Devices", subtitle: "Your marbles follow you", description: "Sign in with your email to save your jar to the cloud. Same marbles on your phone, tablet, and computer." },
+  { title: "Add to Home Screen", subtitle: "Make it feel like an app", description: "iPhone: Tap the Share button, then 'Add to Home Screen.' Android: Tap the menu (⋮), then 'Add to Home Screen' or 'Install.' Now you'll have an icon!" }
 ];
 
 const getEncouragement = (count: number, tone: TonePreference): string => {
@@ -171,10 +172,11 @@ const Onboarding: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', padding: '48px 32px', maxWidth: '448px', margin: '0 auto' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center' }}>
         <div style={{ fontSize: '64px', marginBottom: '32px' }}>
-          {currentSlide === 0 && '🫙'}
+          {currentSlide === 0 && <img src="/jar.svg" alt="Marble jar" style={{ width: '120px', height: '156px' }} />}
           {currentSlide === 1 && '📅'}
           {currentSlide === 2 && '💬'}
           {currentSlide === 3 && '☁️'}
+          {currentSlide === 4 && '📱'}
         </div>
         <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b', marginBottom: '8px', fontFamily: 'Georgia, serif' }}>{slide.title}</h1>
         <p style={{ fontSize: '14px', fontWeight: 600, color: '#4ECDC4', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '24px' }}>{slide.subtitle}</p>
