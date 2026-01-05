@@ -52,6 +52,7 @@ const DEFAULT_STATE: AppState = {
 };
 
 const STORAGE_KEY = 'marbleverse_state_v5';
+const UNLOCK_KEY = 'marbleverse_unlocked';
 const MILESTONES = [7, 13, 30, 60, 90, 100, 365];
 const MARBLE_COLORS = ['#4ECDC4', '#FF8C42', '#FFD700', '#4361EE', '#F72585', '#70E000', '#9B5DE5', '#00BBF9'];
 
@@ -112,7 +113,7 @@ const ONBOARDING_SLIDES = [
   { title: "Welcome to Marbleverse", subtitle: "A jar for your wins", description: "Every small victory deserves a marble. Sobriety. Hydration. Movement. Rest. Whatever you're tracking, drop it in the jar." },
   { title: "Track Important Dates", subtitle: "Count the days that matter", description: "Add your sober date, your fresh-start date, or any milestone. Watch the days add up right on your home screen." },
   { title: "Choose Your Voice", subtitle: "Encouragement your way", description: "Pick Zen, Poetic, Grounded, or Christian. When you hit a milestone, you'll get a message in the voice that speaks to you." },
-  { title: "Sync Across Devices", subtitle: "Your marbles follow you", description: "Sign in with your email to save your jar to the cloud. Same marbles on your phone, tablet, and computer." },
+  { title: "Sync Across Devices", subtitle: "Your marbles follow you", description: "Your marbles save automatically. Use the same code on any device to access them." },
   { title: "Add to Home Screen", subtitle: "Make it feel like an app", description: "iPhone: Tap the Share button, then 'Add to Home Screen.' Android: Tap the menu (⋮), then 'Add to Home Screen' or 'Install.' Now you'll have an icon!" }
 ];
 
@@ -162,6 +163,103 @@ const useAudio = () => {
   return { playDrop };
 };
 
+// ========== CODE GATE COMPONENT ==========
+const CodeGate: React.FC<{ onUnlock: (code: string) => void }> = ({ onUnlock }) => {
+  const [codeInput, setCodeInput] = useState('');
+  const [error, setError] = useState('');
+  const [checking, setChecking] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!codeInput.trim()) return;
+    setChecking(true);
+    setError('');
+    
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('codes')
+        .select('id, used_by')
+        .eq('code', codeInput.trim().toUpperCase())
+        .single();
+      
+      if (fetchError || !data) {
+        setError('Invalid code. Please check and try again.');
+        setChecking(false);
+        return;
+      }
+      
+      if (data.used_by) {
+        // Code already used - but that's okay, let them in if it's their code
+        // For now, just let anyone with a valid code in
+      }
+      
+      // Valid code - unlock the app
+      onUnlock(codeInput.trim().toUpperCase());
+      
+    } catch (e) {
+      setError('Something went wrong. Please try again.');
+    }
+    setChecking(false);
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff', padding: '32px', maxWidth: '448px', margin: '0 auto' }}>
+      <img src="/jar.svg" alt="Marble jar" style={{ width: '120px', height: '156px', marginBottom: '32px' }} />
+      <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b', marginBottom: '8px', fontFamily: 'Georgia, serif', textAlign: 'center' }}>Welcome to Marbleverse</h1>
+      <p style={{ fontSize: '14px', color: '#64748b', marginBottom: '32px', textAlign: 'center', lineHeight: 1.6 }}>Enter your access code to unlock the app.</p>
+      
+      <input
+        type="text"
+        value={codeInput}
+        onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
+        placeholder="ENTER CODE"
+        style={{
+          width: '100%',
+          maxWidth: '280px',
+          padding: '16px 20px',
+          fontSize: '18px',
+          fontWeight: 700,
+          letterSpacing: '0.15em',
+          textAlign: 'center',
+          border: '2px solid #e2e8f0',
+          borderRadius: '16px',
+          outline: 'none',
+          marginBottom: '16px'
+        }}
+        onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+      />
+      
+      <button
+        onClick={handleSubmit}
+        disabled={checking || !codeInput.trim()}
+        style={{
+          width: '100%',
+          maxWidth: '280px',
+          padding: '16px',
+          fontSize: '14px',
+          fontWeight: 700,
+          textTransform: 'uppercase',
+          letterSpacing: '0.1em',
+          backgroundColor: '#4ECDC4',
+          color: 'white',
+          border: 'none',
+          borderRadius: '16px',
+          cursor: 'pointer',
+          opacity: checking || !codeInput.trim() ? 0.5 : 1
+        }}
+      >
+        {checking ? 'Checking...' : 'Unlock'}
+      </button>
+      
+      {error && <p style={{ marginTop: '16px', fontSize: '14px', color: '#ef4444', textAlign: 'center' }}>{error}</p>}
+      
+      <p style={{ marginTop: '48px', fontSize: '12px', color: '#94a3b8', textAlign: 'center' }}>
+        Don't have a code?<br />
+        <a href="https://marbleverse.com" style={{ color: '#4ECDC4' }}>Get access at marbleverse.com</a>
+      </p>
+    </div>
+  );
+};
+
 // ========== ONBOARDING COMPONENT ==========
 const Onboarding: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -172,7 +270,7 @@ const Onboarding: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', padding: '48px 32px', maxWidth: '448px', margin: '0 auto' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center' }}>
         <div style={{ fontSize: '64px', marginBottom: '32px' }}>
-          {currentSlide === 0 && <img src="/jar.svg" alt="Marble jar" style={{ width: '120px', height: '156px' }} />}
+          {currentSlide === 0 && <img src="/jar.svg" alt="Marble jar" style={{ width: '120px', height: '156px', margin: '0 auto' }} />}
           {currentSlide === 1 && '📅'}
           {currentSlide === 2 && '💬'}
           {currentSlide === 3 && '☁️'}
@@ -258,6 +356,13 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; theme: JarTheme; c
 
 // ========== MAIN APP ==========
 const App: React.FC = () => {
+  // Check if app is unlocked
+  const [isUnlocked, setIsUnlocked] = useState(() => {
+    try {
+      return localStorage.getItem(UNLOCK_KEY) !== null;
+    } catch (e) { return false; }
+  });
+  
   const [state, setState] = useState<AppState>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -271,11 +376,7 @@ const App: React.FC = () => {
     return DEFAULT_STATE;
   });
 
-  const [user, setUser] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState(true);
   const [syncLoading, setSyncLoading] = useState(false);
-  const [emailInput, setEmailInput] = useState('');
-  const [authMessage, setAuthMessage] = useState('');
 
   const { playDrop } = useAudio();
   const [isCheckInOpen, setIsCheckInOpen] = useState(false);
@@ -296,70 +397,80 @@ const App: React.FC = () => {
   const [newMilestoneName, setNewMilestoneName] = useState('');
   const [newMilestoneDate, setNewMilestoneDate] = useState('');
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      setAuthLoading(false);
-      if (session?.user) loadFromCloud(session.user.id);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) loadFromCloud(session.user.id);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
+  const unlockCode = localStorage.getItem(UNLOCK_KEY);
 
-  useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { console.error(e); } }, [state]);
+  useEffect(() => { 
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { console.error(e); } 
+  }, [state]);
 
+  // Auto-save to cloud using the code as identifier
   useEffect(() => {
-    if (user && !authLoading) {
+    if (isUnlocked && unlockCode) {
       const timeout = setTimeout(() => saveToCloud(), 2000);
       return () => clearTimeout(timeout);
     }
-  }, [state, user]);
+  }, [state, isUnlocked]);
 
-  const loadFromCloud = async (userId: string) => {
+  // Load from cloud when unlocked
+  useEffect(() => {
+    if (isUnlocked && unlockCode) {
+      loadFromCloud();
+    }
+  }, [isUnlocked]);
+
+  const loadFromCloud = async () => {
+    if (!unlockCode) return;
     try {
-      const { data, error } = await supabase.from('vaults').select('blob').eq('user_id', userId).single();
-      if (error && error.code !== 'PGRST116') throw error;
-      if (data?.blob) {
-        const cloudState = data.blob as AppState;
-        // Merge: keep onboardingComplete from either source
-        setState(prev => ({ ...cloudState, onboardingComplete: prev.onboardingComplete || cloudState.onboardingComplete }));
+      const { data, error } = await supabase
+        .from('codes')
+        .select('id')
+        .eq('code', unlockCode)
+        .single();
+      
+      if (data) {
+        const { data: vaultData } = await supabase
+          .from('vaults')
+          .select('blob')
+          .eq('user_id', data.id)
+          .single();
+        
+        if (vaultData?.blob) {
+          const cloudState = vaultData.blob as AppState;
+          setState(prev => ({ ...cloudState, onboardingComplete: prev.onboardingComplete || cloudState.onboardingComplete }));
+        }
       }
     } catch (e) { console.error('Load error:', e); }
   };
 
   const saveToCloud = async () => {
-    if (!user) return;
+    if (!unlockCode) return;
     setSyncLoading(true);
     try {
-      const { error } = await supabase.from('vaults').upsert({ user_id: user.id, blob: state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-      if (error) throw error;
+      const { data: codeData } = await supabase
+        .from('codes')
+        .select('id')
+        .eq('code', unlockCode)
+        .single();
+      
+      if (codeData) {
+        await supabase.from('vaults').upsert({ 
+          user_id: codeData.id, 
+          blob: state, 
+          updated_at: new Date().toISOString() 
+        }, { onConflict: 'user_id' });
+      }
     } catch (e) { console.error('Save error:', e); }
     setSyncLoading(false);
   };
 
-  const handleLogin = async () => {
-    if (!emailInput.trim()) return;
-    setSyncLoading(true);
-    setAuthMessage('');
-    try {
-      const { error } = await supabase.auth.signInWithOtp({ 
-        email: emailInput.trim(),
-        options: { emailRedirectTo: window.location.origin }
-      });
-      if (error) throw error;
-      setAuthMessage('Check your email for a magic link!');
-    } catch (e: any) { 
-      setAuthMessage('Error: ' + e.message); 
-    }
-    setSyncLoading(false);
+  const handleUnlock = (code: string) => {
+    localStorage.setItem(UNLOCK_KEY, code);
+    setIsUnlocked(true);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
+  const handleLogout = () => {
+    localStorage.removeItem(UNLOCK_KEY);
+    setIsUnlocked(false);
     setShowAccount(false);
   };
 
@@ -397,14 +508,12 @@ const App: React.FC = () => {
   const btnStyle = { backgroundColor: t.accent, color: 'white' };
   const btnSecStyle = { backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.4)' : 'white', color: t.text, border: '1px solid ' + t.jarBorder };
 
-  if (authLoading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff' }}>
-        <p style={{ color: '#64748b' }}>Loading...</p>
-      </div>
-    );
+  // Show code gate if not unlocked
+  if (!isUnlocked) {
+    return <CodeGate onUnlock={handleUnlock} />;
   }
 
+  // Show onboarding if not complete
   if (!state.onboardingComplete) {
     return <Onboarding onComplete={completeOnboarding} />;
   }
@@ -420,7 +529,7 @@ const App: React.FC = () => {
           <button onClick={() => setShowMilestones(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft, fontSize: '18px' }}>📅</button>
           <button onClick={() => setShowHistory(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft, fontSize: '18px' }}>🕐</button>
           <button onClick={() => setShowSettings(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft, fontSize: '18px' }}>⚙️</button>
-          <button onClick={() => setShowAccount(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', color: user ? t.accent : t.textSoft }}>👤</button>
+          <button onClick={() => setShowAccount(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', color: t.accent }}>👤</button>
         </div>
       </header>
 
@@ -444,26 +553,15 @@ const App: React.FC = () => {
       <button onClick={() => setIsCheckInOpen(true)} style={{ position: 'fixed', bottom: '40px', left: '50%', transform: 'translateX(-50%)', width: '64px', height: '64px', borderRadius: '50%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 40, border: '1px solid ' + t.jarBorder, cursor: 'pointer', backgroundColor: state.theme === 'Midnight' ? 'rgba(79,70,229,0.6)' : 'white', color: t.textSoft, fontSize: '28px' }}>+</button>
 
       {/* Account Modal */}
-      <Modal isOpen={showAccount} onClose={() => { setShowAccount(false); setAuthMessage(''); }} theme={state.theme} title="Account" fullScreen>
+      <Modal isOpen={showAccount} onClose={() => setShowAccount(false)} theme={state.theme} title="Account" fullScreen>
         <div style={{ paddingBottom: '48px' }}>
-          {user ? (
-            <div>
-              <div style={{ padding: '24px', borderRadius: '24px', backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.3)' : 'rgba(78,205,196,0.1)', border: '1px solid ' + t.jarBorder, marginBottom: '24px', textAlign: 'center' }}>
-                <div style={{ fontSize: '48px', marginBottom: '16px' }}>✓</div>
-                <p style={{ fontSize: '12px', color: t.textSoft, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Logged in as</p>
-                <p style={{ fontSize: '16px', fontWeight: 600, color: t.text, wordBreak: 'break-all' }}>{user.email}</p>
-              </div>
-              <p style={{ fontSize: '13px', color: t.textSoft, marginBottom: '24px', lineHeight: 1.6 }}>Your marbles automatically sync to the cloud. Use the same email on any device to access them.</p>
-              <button onClick={handleLogout} style={{ width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', border: '1px solid ' + t.jarBorder, backgroundColor: 'transparent', color: t.text }}>Log Out</button>
-            </div>
-          ) : (
-            <div>
-              <p style={{ fontSize: '13px', color: t.textSoft, marginBottom: '24px', lineHeight: 1.6 }}>Sign in to save your marbles to the cloud and access them on any device.</p>
-              <input type="email" value={emailInput} onChange={(e) => setEmailInput(e.target.value)} placeholder="your@email.com" style={{ width: '100%', boxSizing: 'border-box', borderRadius: '12px', padding: '14px 16px', fontSize: '14px', marginBottom: '12px', outline: 'none', backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.5)' : 'white', border: '1px solid ' + t.jarBorder, color: t.text }} />
-              <button onClick={handleLogin} disabled={syncLoading} style={{ width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', border: 'none', opacity: syncLoading ? 0.5 : 1, ...btnStyle }}>{syncLoading ? 'Sending...' : 'Send Magic Link'}</button>
-              {authMessage && <p style={{ marginTop: '16px', fontSize: '13px', color: authMessage.includes('Error') ? '#ef4444' : t.accent, textAlign: 'center' }}>{authMessage}</p>}
-            </div>
-          )}
+          <div style={{ padding: '24px', borderRadius: '24px', backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.3)' : 'rgba(78,205,196,0.1)', border: '1px solid ' + t.jarBorder, marginBottom: '24px', textAlign: 'center' }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>✓</div>
+            <p style={{ fontSize: '12px', color: t.textSoft, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Unlocked with code</p>
+            <p style={{ fontSize: '18px', fontWeight: 700, color: t.text, letterSpacing: '0.1em' }}>{unlockCode}</p>
+          </div>
+          <p style={{ fontSize: '13px', color: t.textSoft, marginBottom: '24px', lineHeight: 1.6 }}>Your marbles automatically sync to the cloud. Use this same code on any device to access them.</p>
+          <button onClick={handleLogout} style={{ width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', border: '1px solid ' + t.jarBorder, backgroundColor: 'transparent', color: t.text }}>Log Out</button>
         </div>
       </Modal>
 
