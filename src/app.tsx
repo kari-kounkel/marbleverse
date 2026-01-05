@@ -436,7 +436,10 @@ const App: React.FC = () => {
         
         if (vaultData?.blob) {
           const cloudState = vaultData.blob as AppState;
-          setState(prev => ({ ...cloudState, onboardingComplete: prev.onboardingComplete || cloudState.onboardingComplete }));
+          setState(cloudState);
+        } else {
+          // No cloud data for this code - start fresh
+          setState(DEFAULT_STATE);
         }
       }
     } catch (e) { console.error('Load error:', e); }
@@ -465,11 +468,14 @@ const App: React.FC = () => {
 
   const handleUnlock = (code: string) => {
     localStorage.setItem(UNLOCK_KEY, code);
+    localStorage.removeItem(STORAGE_KEY); // Clear local state so cloud takes over
     setIsUnlocked(true);
   };
 
   const handleLogout = () => {
     localStorage.removeItem(UNLOCK_KEY);
+    localStorage.removeItem(STORAGE_KEY); // Clear local state
+    setState(DEFAULT_STATE); // Reset state
     setIsUnlocked(false);
     setShowAccount(false);
   };
