@@ -1,13 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// ============ SUPABASE ============
 const supabase = createClient(
   'https://zlcuuweuzcgaisykuomy.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsY3V1d2V1emNnYWlzeWt1b215Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc1NzA3ODUsImV4cCI6MjA4MzE0Njc4NX0.9bt8AuP89Tm2-lwqxy-0inNjzN7Mhg254qanFG9--ho'
 );
 
-type TonePreference = 'Zen' | 'Poetic' | 'Grounded';
+type TonePreference = 'Zen' | 'Poetic' | 'Grounded' | 'Christian';
 type JarTheme = 'Classic' | 'Midnight' | 'Ceramic';
 type MarbleSize = 'sm' | 'md' | 'lg' | 'xl';
 
@@ -38,6 +37,7 @@ interface AppState {
   milestonesReached: number[];
   soundEnabled: boolean;
   milestoneDates: MilestoneDate[];
+  onboardingComplete: boolean;
 }
 
 const DEFAULT_STATE: AppState = {
@@ -47,12 +47,12 @@ const DEFAULT_STATE: AppState = {
   lastCheckIn: null,
   milestonesReached: [],
   soundEnabled: true,
-  milestoneDates: []
+  milestoneDates: [],
+  onboardingComplete: false
 };
 
-const STORAGE_KEY = 'marbleverse_state_v4';
+const STORAGE_KEY = 'marbleverse_state_v5';
 const MILESTONES = [7, 13, 30, 60, 90, 100, 365];
-
 const MARBLE_COLORS = ['#4ECDC4', '#FF8C42', '#FFD700', '#4361EE', '#F72585', '#70E000', '#9B5DE5', '#00BBF9'];
 
 const CATEGORIES = [
@@ -71,33 +71,49 @@ const THEMES: Record<JarTheme, { bg: string; jarBorder: string; jarBg: string; t
 
 const ENCOURAGEMENTS: Record<TonePreference, Record<number, string[]>> = {
   Zen: {
-    7: ["Seven days. You showed up seven times. That's a whole week of trying.", "Look at you, collecting moments like seashells. Seven so far.", "A week of small yeses. The jar notices."],
-    13: ["Thirteen! The universe's favorite weirdo number. You fit right in.", "A baker's dozen of grace. One extra, just because.", "13 marbles. Some people think that's unlucky. Those people are wrong."],
-    30: ["Thirty whole days of not giving up. That's a moon cycle of stubborn hope.", "A month! You just proved you can do hard things for 30 days straight.", "30 marbles sitting pretty. You built that."],
-    60: ["Sixty days. Two whole months of choosing yourself.", "Look at this jar getting crowded. 60 marbles need a bigger house.", "Two months of showing up. Day-one-you would be proud."],
-    90: ["90 DAYS. A whole season. You've weathered something beautiful.", "A quarter year of tiny wins. That's not tiny anymore.", "90 marbles. Somewhere, a chicken is clucking in your honor."],
-    100: ["TRIPLE DIGITS. You absolute legend.", "One hundred. You did that. Nobody else. Just you.", "100 moments of not quitting. Frame this."],
-    365: ["A YEAR. 365 days of gathering yourself back together.", "One whole trip around the sun, collecting grace.", "365 marbles. Proof you can do hard things."]
+    7: ["Seven days. You showed up seven times. That's a whole week of trying.", "Look at you, collecting moments like seashells.", "A week of small yeses. The jar notices."],
+    13: ["Thirteen! The universe's favorite weirdo number.", "A baker's dozen of grace.", "13 marbles. Some think that's unlucky. They're wrong."],
+    30: ["Thirty whole days of not giving up.", "A month! You can do hard things for 30 days.", "30 marbles sitting pretty. You built that."],
+    60: ["Sixty days. Two whole months of choosing yourself.", "Look at this jar getting crowded.", "Two months of showing up."],
+    90: ["90 DAYS. A whole season.", "A quarter year of tiny wins.", "90 marbles. A chicken clucks in your honor."],
+    100: ["TRIPLE DIGITS. You absolute legend.", "One hundred. You did that.", "100 moments of not quitting."],
+    365: ["A YEAR. 365 days of gathering yourself.", "One whole trip around the sun.", "365 marbles. Proof you can do hard things."]
   },
   Poetic: {
-    7: ["Seven small stones, stacking toward something bigger.", "A week of breadcrumbs leading you home to yourself.", "Seven stars in your pocket. The constellation begins."],
-    13: ["Thirteen — the number of misfits and miracles. You're both.", "A sideways dozen plus grace. The math works.", "Thirteen whispers of 'I think I can.'"],
+    7: ["Seven small stones, stacking toward something bigger.", "A week of breadcrumbs leading you home.", "Seven stars in your pocket."],
+    13: ["Thirteen — the number of misfits and miracles.", "A sideways dozen plus grace.", "Thirteen whispers of 'I think I can.'"],
     30: ["A moon has waxed and waned while you gathered these.", "One month of stitching yourself back together.", "Thirty sunrises you didn't waste."],
-    60: ["Sixty pearls on a string of ordinary days made extraordinary.", "Two moons of quiet revolution.", "Sixty chapters in the language of showing up."],
-    90: ["A season. You've weathered a whole season of becoming.", "Ninety threads woven into something like hope.", "The jar grows heavy with gathered grace."],
-    100: ["A hundred small rebellions against giving up.", "Triple digits of defiant, stubborn, beautiful trying.", "One hundred love letters to your future self."],
-    365: ["A year held in glass. Every hard day counts.", "365 acts of faith that tomorrow could be different.", "The jar overflows with a year of not quitting."]
+    60: ["Sixty pearls on a string of ordinary days.", "Two moons of quiet revolution.", "Sixty chapters in the language of showing up."],
+    90: ["A season. You've weathered a whole season of becoming.", "Ninety threads woven into hope.", "The jar grows heavy with gathered grace."],
+    100: ["A hundred small rebellions against giving up.", "Triple digits of stubborn, beautiful trying.", "One hundred love letters to your future self."],
+    365: ["A year held in glass.", "365 acts of faith that tomorrow could be different.", "The jar overflows with a year of not quitting."]
   },
   Grounded: {
     7: ["Seven days. You showed up. That's the assignment.", "A week in the jar. Not bad.", "7 down. More where that came from."],
-    13: ["13 marbles. Luck had nothing to do with it.", "Thirteen. Building something real here.", "A baker's dozen of 'I did that.'"],
-    30: ["A month. Not a fluke — a pattern. A good one.", "30 days of doing the thing. You're the thing-doer now.", "One month of receipts that you can handle your life."],
-    60: ["Two months. Not a phase. This is who you're becoming.", "60 marbles don't lie. You're doing this.", "Halfway to 90."],
+    13: ["13 marbles. Luck had nothing to do with it.", "Thirteen. Building something real.", "A baker's dozen of 'I did that.'"],
+    30: ["A month. Not a fluke — a pattern.", "30 days of doing the thing.", "One month of receipts."],
+    60: ["Two months. Not a phase anymore.", "60 marbles don't lie.", "Halfway to 90."],
     90: ["90 days. You've made a habit of not giving up.", "Three months of proof.", "90 marbles. Weight. Substance. You."],
-    100: ["Triple digits. The hundred club. Membership: stubbornness.", "100. A HUNDRED. Say it out loud.", "Welcome to 100. The only requirement was not quitting."],
-    365: ["365 days. One whole year of choosing yourself.", "A year becoming someone who doesn't quit.", "365 marbles. Days you thought you couldn't but did."]
+    100: ["Triple digits. The hundred club.", "100. A HUNDRED. Say it out loud.", "Welcome to 100."],
+    365: ["365 days. One whole year of choosing yourself.", "A year becoming someone who doesn't quit.", "365 marbles. Days you thought you couldn't."]
+  },
+  Christian: {
+    7: ["'For seven days celebrate the festival to the Lord.' — Deut. 16:15. A week of faithfulness.", "Seven days. Even God rested on the seventh. You showed up all seven.", "The Lord made the world in seven days. You made a week of victories."],
+    13: ["'I can do all things through Christ who strengthens me.' — Phil. 4:13. Thirteen things and counting.", "Thirteen graces gathered. His mercies are new every morning.", "13 marbles of faith, each one a mustard seed."],
+    30: ["'Be still before the Lord and wait patiently for him.' — Psalm 37:7. Thirty days of waiting well.", "A month of manna — daily bread, daily showing up.", "'His faithfulness continues through all generations.' Thirty days of yours."],
+    60: ["'They who wait upon the Lord shall renew their strength.' — Isaiah 40:31. Sixty days of renewed strength.", "Two months. 'He gives power to the weak.' You received it.", "'The Lord is my strength and my song.' — Exodus 15:2. Sixty days of song."],
+    90: ["'Let us not become weary in doing good, for at the proper time we will reap.' — Gal. 6:9. Ninety days sown.", "A season of faithfulness. 'To everything there is a season.' This one is yours.", "'He has made everything beautiful in its time.' — Eccl. 3:11. Ninety beautiful days."],
+    100: ["'The Lord is my shepherd; I shall not want.' — Psalm 23:1. One hundred days of being led.", "Triple digits! 'Great is Thy faithfulness.' One hundred times over.", "'With God all things are possible.' — Matt. 19:26. You proved it 100 times."],
+    365: ["'His mercies are new every morning.' — Lam. 3:23. You collected 365 of them.", "A year! 'The steadfast love of the Lord never ceases.' 365 days of steadfast love.", "'Surely goodness and mercy shall follow me all the days of my life.' — Psalm 23:6. All 365."]
   }
 };
+
+const ONBOARDING_SLIDES = [
+  { title: "Welcome to Marbleverse", subtitle: "A jar for your wins", description: "Every small victory deserves a marble. Sobriety. Hydration. Movement. Rest. Whatever you're tracking, drop it in the jar." },
+  { title: "Track Important Dates", subtitle: "Count the days that matter", description: "Add your sober date, your fresh-start date, or any milestone. Watch the days add up right on your home screen." },
+  { title: "Choose Your Voice", subtitle: "Encouragement your way", description: "Pick Zen, Poetic, Grounded, or Christian. When you hit a milestone, you'll get a message in the voice that speaks to you." },
+  { title: "Sync Across Devices", subtitle: "Your marbles follow you", description: "Sign in with your email to save your jar to the cloud. Same marbles on your phone, tablet, and computer." }
+];
 
 const getEncouragement = (count: number, tone: TonePreference): string => {
   const milestone = MILESTONES.find(m => m === count);
@@ -145,6 +161,45 @@ const useAudio = () => {
   return { playDrop };
 };
 
+// ========== ONBOARDING COMPONENT ==========
+const Onboarding: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const isLast = currentSlide === ONBOARDING_SLIDES.length - 1;
+  const slide = ONBOARDING_SLIDES[currentSlide];
+  
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', backgroundColor: '#ffffff', padding: '48px 32px', maxWidth: '448px', margin: '0 auto' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center' }}>
+        <div style={{ fontSize: '64px', marginBottom: '32px' }}>
+          {currentSlide === 0 && '🫙'}
+          {currentSlide === 1 && '📅'}
+          {currentSlide === 2 && '💬'}
+          {currentSlide === 3 && '☁️'}
+        </div>
+        <h1 style={{ fontSize: '28px', fontWeight: 700, color: '#1e293b', marginBottom: '8px', fontFamily: 'Georgia, serif' }}>{slide.title}</h1>
+        <p style={{ fontSize: '14px', fontWeight: 600, color: '#4ECDC4', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '24px' }}>{slide.subtitle}</p>
+        <p style={{ fontSize: '16px', color: '#64748b', lineHeight: 1.7 }}>{slide.description}</p>
+      </div>
+      
+      <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '32px' }}>
+        {ONBOARDING_SLIDES.map((_, i) => (
+          <div key={i} style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: i === currentSlide ? '#4ECDC4' : '#e2e8f0' }} />
+        ))}
+      </div>
+      
+      <div style={{ display: 'flex', gap: '16px' }}>
+        {currentSlide > 0 && (
+          <button onClick={() => setCurrentSlide(currentSlide - 1)} style={{ flex: 1, padding: '16px', fontSize: '14px', fontWeight: 700, backgroundColor: 'transparent', border: '1px solid #e2e8f0', borderRadius: '16px', cursor: 'pointer', color: '#64748b' }}>Back</button>
+        )}
+        <button onClick={() => isLast ? onComplete() : setCurrentSlide(currentSlide + 1)} style={{ flex: 2, padding: '16px', fontSize: '14px', fontWeight: 700, backgroundColor: '#4ECDC4', color: 'white', border: 'none', borderRadius: '16px', cursor: 'pointer' }}>
+          {isLast ? "Let's Go!" : 'Next'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ========== MARBLE JAR COMPONENT ==========
 const MarbleJar: React.FC<{ marbles: Marble[]; theme: JarTheme }> = ({ marbles, theme }) => {
   const t = THEMES[theme];
   return (
@@ -180,6 +235,7 @@ const MarbleJar: React.FC<{ marbles: Marble[]; theme: JarTheme }> = ({ marbles, 
   );
 };
 
+// ========== MODAL COMPONENT ==========
 const Modal: React.FC<{ isOpen: boolean; onClose: () => void; theme: JarTheme; children: React.ReactNode; title?: string; fullScreen?: boolean }> = ({ isOpen, onClose, theme, children, title, fullScreen }) => {
   const t = THEMES[theme];
   if (!isOpen) return null;
@@ -189,7 +245,7 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; theme: JarTheme; c
         {title && (
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: fullScreen ? '48px' : '24px' }}>
             <h2 style={{ fontSize: fullScreen ? '30px' : '20px', fontWeight: 700, color: t.text, fontFamily: 'Georgia, serif' }}>{title}</h2>
-            <button onClick={onClose} style={{ padding: '12px', borderRadius: '50%', backgroundColor: theme === 'Midnight' ? 'rgba(49,46,129,1)' : 'rgba(226,232,240,1)', color: t.textSoft, border: 'none', cursor: 'pointer' }}>✕</button>
+            <button onClick={onClose} style={{ padding: '12px', borderRadius: '50%', backgroundColor: theme === 'Midnight' ? 'rgba(49,46,129,1)' : 'rgba(226,232,240,1)', color: t.textSoft, border: 'none', cursor: 'pointer', fontSize: '18px' }}>✕</button>
           </div>
         )}
         <div style={{ flex: 1, overflowY: 'auto' }}>{children}</div>
@@ -198,11 +254,17 @@ const Modal: React.FC<{ isOpen: boolean; onClose: () => void; theme: JarTheme; c
   );
 };
 
+// ========== MAIN APP ==========
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) { const p = JSON.parse(saved); if (!p.milestoneDates) p.milestoneDates = []; return p; }
+      if (saved) { 
+        const p = JSON.parse(saved); 
+        if (!p.milestoneDates) p.milestoneDates = []; 
+        if (p.onboardingComplete === undefined) p.onboardingComplete = false;
+        return p; 
+      }
     } catch (e) { console.error(e); }
     return DEFAULT_STATE;
   });
@@ -232,7 +294,6 @@ const App: React.FC = () => {
   const [newMilestoneName, setNewMilestoneName] = useState('');
   const [newMilestoneDate, setNewMilestoneDate] = useState('');
 
-  // Check for existing session on load
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
@@ -246,10 +307,8 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Save to localStorage
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { console.error(e); } }, [state]);
 
-  // Auto-save to cloud when state changes (if logged in)
   useEffect(() => {
     if (user && !authLoading) {
       const timeout = setTimeout(() => saveToCloud(), 2000);
@@ -262,7 +321,9 @@ const App: React.FC = () => {
       const { data, error } = await supabase.from('vaults').select('blob').eq('user_id', userId).single();
       if (error && error.code !== 'PGRST116') throw error;
       if (data?.blob) {
-        setState(data.blob as AppState);
+        const cloudState = data.blob as AppState;
+        // Merge: keep onboardingComplete from either source
+        setState(prev => ({ ...cloudState, onboardingComplete: prev.onboardingComplete || cloudState.onboardingComplete }));
       }
     } catch (e) { console.error('Load error:', e); }
   };
@@ -300,6 +361,10 @@ const App: React.FC = () => {
     setShowAccount(false);
   };
 
+  const completeOnboarding = () => {
+    setState(prev => ({ ...prev, onboardingComplete: true }));
+  };
+
   const addMarble = () => {
     if (isProcessing) return;
     setIsProcessing(true);
@@ -332,10 +397,14 @@ const App: React.FC = () => {
 
   if (authLoading) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg }}>
-        <p style={{ color: t.textSoft }}>Loading...</p>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#ffffff' }}>
+        <p style={{ color: '#64748b' }}>Loading...</p>
       </div>
     );
+  }
+
+  if (!state.onboardingComplete) {
+    return <Onboarding onComplete={completeOnboarding} />;
   }
 
   return (
@@ -346,10 +415,10 @@ const App: React.FC = () => {
         <h1 style={{ fontSize: '22px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', color: t.textSoft }}>Marbleverse</h1>
         <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
           {syncLoading && <span style={{ fontSize: '10px', color: t.textSoft }}>saving...</span>}
-          <button onClick={() => setShowMilestones(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft }}>📅</button>
-          <button onClick={() => setShowHistory(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft }}>🕐</button>
-          <button onClick={() => setShowSettings(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft }}>⚙️</button>
-          <button onClick={() => setShowAccount(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: user ? t.accent : t.textSoft }}>👤</button>
+          <button onClick={() => setShowMilestones(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft, fontSize: '18px' }}>📅</button>
+          <button onClick={() => setShowHistory(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft, fontSize: '18px' }}>🕐</button>
+          <button onClick={() => setShowSettings(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft, fontSize: '18px' }}>⚙️</button>
+          <button onClick={() => setShowAccount(true)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', fontSize: '18px', color: user ? t.accent : t.textSoft }}>👤</button>
         </div>
       </header>
 
@@ -377,9 +446,10 @@ const App: React.FC = () => {
         <div style={{ paddingBottom: '48px' }}>
           {user ? (
             <div>
-              <div style={{ padding: '24px', borderRadius: '24px', backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.3)' : 'rgba(78,205,196,0.1)', border: '1px solid ' + t.jarBorder, marginBottom: '24px' }}>
-                <p style={{ fontSize: '12px', color: t.textSoft, marginBottom: '8px' }}>Logged in as</p>
-                <p style={{ fontSize: '16px', fontWeight: 600, color: t.text }}>{user.email}</p>
+              <div style={{ padding: '24px', borderRadius: '24px', backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.3)' : 'rgba(78,205,196,0.1)', border: '1px solid ' + t.jarBorder, marginBottom: '24px', textAlign: 'center' }}>
+                <div style={{ fontSize: '48px', marginBottom: '16px' }}>✓</div>
+                <p style={{ fontSize: '12px', color: t.textSoft, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Logged in as</p>
+                <p style={{ fontSize: '16px', fontWeight: 600, color: t.text, wordBreak: 'break-all' }}>{user.email}</p>
               </div>
               <p style={{ fontSize: '13px', color: t.textSoft, marginBottom: '24px', lineHeight: 1.6 }}>Your marbles automatically sync to the cloud. Use the same email on any device to access them.</p>
               <button onClick={handleLogout} style={{ width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', border: '1px solid ' + t.jarBorder, backgroundColor: 'transparent', color: t.text }}>Log Out</button>
@@ -463,7 +533,7 @@ const App: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ fontSize: '24px', fontWeight: 700, color: t.accent }}>{getDaysSince(m.date)}<span style={{ fontSize: '11px', fontWeight: 500, marginLeft: '4px' }}>days</span></div>
-                    <button onClick={() => removeMilestoneDate(m.id)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft, opacity: 0.5 }}>🗑️</button>
+                    <button onClick={() => removeMilestoneDate(m.id)} style={{ padding: '8px', backgroundColor: 'transparent', border: 'none', cursor: 'pointer', color: t.textSoft, opacity: 0.5, fontSize: '16px' }}>🗑️</button>
                   </div>
                 </div>
               ))}
@@ -498,8 +568,8 @@ const App: React.FC = () => {
           </div>
           <div>
             <label style={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 800, display: 'block', marginBottom: '20px', color: t.text }}>Voice</label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-              {(['Zen', 'Poetic', 'Grounded'] as TonePreference[]).map(tn => (<button key={tn} onClick={() => setState({...state, tone: tn})} style={{ padding: '20px', borderRadius: '16px', fontSize: '10px', fontWeight: 900, cursor: 'pointer', transform: state.tone === tn ? 'scale(1.05)' : 'scale(1)', border: '2px solid ' + (state.tone === tn ? t.accent : t.jarBorder), ...(state.tone === tn ? btnStyle : btnSecStyle) }}>{tn}</button>))}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
+              {(['Zen', 'Poetic', 'Grounded', 'Christian'] as TonePreference[]).map(tn => (<button key={tn} onClick={() => setState({...state, tone: tn})} style={{ padding: '20px', borderRadius: '16px', fontSize: '10px', fontWeight: 900, cursor: 'pointer', transform: state.tone === tn ? 'scale(1.05)' : 'scale(1)', border: '2px solid ' + (state.tone === tn ? t.accent : t.jarBorder), ...(state.tone === tn ? btnStyle : btnSecStyle) }}>{tn}</button>))}
             </div>
           </div>
         </div>
@@ -527,7 +597,7 @@ const App: React.FC = () => {
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', backgroundColor: 'rgba(15,23,42,0.3)', backdropFilter: 'blur(4px)' }}>
           <div style={{ backgroundColor: t.bg, borderRadius: '40px', padding: '32px', maxWidth: '384px', width: '100%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', border: '1px solid ' + t.jarBorder, textAlign: 'center' }}>
             <div style={{ display: 'inline-block', padding: '6px 16px', borderRadius: '9999px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '24px', backgroundColor: state.theme === 'Midnight' ? 'rgba(49,46,129,0.5)' : 'rgba(227,243,241,0.8)', color: t.accent, border: '1px solid ' + t.jarBorder }}>{state.marbles.length} gathered</div>
-            <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '24px', fontFamily: 'Georgia, serif', lineHeight: 1.5, color: t.text }}>{milestoneMsg}</h2>
+            <h2 style={{ fontSize: '18px', fontWeight: 700, marginBottom: '24px', fontFamily: 'Georgia, serif', lineHeight: 1.6, color: t.text }}>{milestoneMsg}</h2>
             <button onClick={() => setMilestoneMsg(null)} style={{ width: '100%', marginTop: '16px', padding: '16px 24px', color: 'white', borderRadius: '16px', fontWeight: 700, fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.1em', border: 'none', cursor: 'pointer', backgroundColor: t.accent }}>I'll take that.</button>
           </div>
         </div>
